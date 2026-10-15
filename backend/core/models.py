@@ -6,7 +6,7 @@ from django.db import models
 
 from core.context import ctx
 from core.errors import CrossTenantWriteError, MissingTenantContextError
-from core.managers import AllSchoolsManager, TenantManager
+from core.managers import AllSchoolsManager, TenantBaseManager, TenantManager
 
 
 class BaseModel(models.Model):
@@ -21,14 +21,15 @@ class BaseModel(models.Model):
 class TenantModel(BaseModel):
     school = models.ForeignKey("accounts.School", on_delete=models.PROTECT)
 
-    objects = TenantManager()
+    objects = TenantManager()  # declared first, so it is the default manager
     all_schools = AllSchoolsManager()
+    _base_rows = TenantBaseManager()
 
     class Meta:
         abstract = True
         # Django uses the base manager for forward foreign keys, save()'s UPDATE and
-        # delete cascades. Scoping it keeps all of those inside the current school.
-        base_manager_name = "objects"
+        # delete cascades. It is scoped like `objects`, except inside system_scope.
+        base_manager_name = "_base_rows"
 
     # The school this row has in the database; None until it is saved or loaded.
     _persisted_school_id: uuid.UUID | None = None

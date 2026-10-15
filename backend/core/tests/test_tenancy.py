@@ -356,3 +356,32 @@ def test_a_many_to_many_link_cannot_cross_schools(school_a, school_b):
 
     with system_scope("test: nothing was linked"):
         assert not CourseTag.all_schools.exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.req("P1-T02")
+def test_a_system_job_can_delete_and_follow_links_across_schools(school_a, school_b):
+    with tenant_context(school_a.id):
+        Lesson.objects.create(course=Course.objects.create(title="Algebra"), title="A1")
+    with tenant_context(school_b.id):
+        Lesson.objects.create(course=Course.objects.create(title="Algebra"), title="B1")
+
+    with system_scope("test: retention across schools"):
+        assert sorted(lesson.course.title for lesson in Lesson.all_schools.all()) == [
+            "Algebra",
+            "Algebra",
+        ]
+        Course.all_schools.all().delete()  # cascades to every school's lessons
+        assert not Lesson.all_schools.exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.req("NFR-SEC-003")
+def test_objects_stays_scoped_inside_a_system_scope(school_a, school_b):
+    with tenant_context(school_a.id):
+        Course.objects.create(title="Greenfield Algebra")
+    with tenant_context(school_b.id):
+        Course.objects.create(title="Riverside Algebra")
+
+    with tenant_context(school_a.id), system_scope("test: objects is unchanged"):
+        assert [c.title for c in Course.objects.all()] == ["Greenfield Algebra"]

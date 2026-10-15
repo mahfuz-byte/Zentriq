@@ -58,6 +58,18 @@ class TenantManager(models.Manager[_M]):
         return TenantQuerySet(self.model, using=self._db).filter(school_id=school_id)
 
 
+class TenantBaseManager(TenantManager[_M]):
+    """Django's base manager for TenantModel: forward links, save()'s UPDATE, delete
+    cascades and refresh_from_db. Scoped like `objects`, except inside `system_scope`,
+    where system jobs need those to reach every school's rows.
+    """
+
+    def get_queryset(self) -> TenantQuerySet[_M]:
+        if ctx().system_scope_reason is not None:
+            return TenantQuerySet(self.model, using=self._db)
+        return super().get_queryset()
+
+
 class AllSchoolsManager(models.Manager[_M]):
     """Unscoped manager for system jobs. Usable only inside `system_scope`.
 
