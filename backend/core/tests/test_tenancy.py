@@ -8,7 +8,7 @@ from core.errors import (
     MissingTenantContextError,
     SystemScopeRequiredError,
 )
-from core.tests.tenancy_app.models import Course
+from core.tests.tenancy_app.models import Course, Lesson
 
 
 @pytest.mark.django_db
@@ -152,3 +152,84 @@ def test_an_existing_row_cannot_move_to_another_school(school_a, school_b):
 def test_saving_without_a_tenant_context_fails_loudly(school_a):
     with pytest.raises(MissingTenantContextError):
         Course(school=school_a, title="Algebra").save()
+
+
+@pytest.mark.django_db
+@pytest.mark.req("C-01")
+def test_a_row_cannot_link_to_another_schools_row(school_a, school_b):
+    with tenant_context(school_b.id):
+        riverside_course = Course.objects.create(title="Riverside Algebra")
+
+    with tenant_context(school_a.id), pytest.raises(CrossTenantWriteError):
+        Lesson.objects.create(course=riverside_course, title="Smuggled lesson")
+
+    with system_scope("test: nothing was written"):
+        assert not Lesson.all_schools.exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.req("C-01")
+def test_bulk_create_cannot_link_to_another_schools_row(school_a, school_b):
+    with tenant_context(school_a.id):
+        greenfield_course = Course.objects.create(title="Greenfield Algebra")
+    with tenant_context(school_b.id):
+        riverside_course = Course.objects.create(title="Riverside Algebra")
+
+    with tenant_context(school_a.id), pytest.raises(CrossTenantWriteError):
+        Lesson.objects.bulk_create(
+            [
+                Lesson(school=school_a, course=greenfield_course, title="Fine"),
+                Lesson(school=school_a, course=riverside_course, title="Smuggled"),
+            ]
+        )
+
+    with system_scope("test: nothing was written"):
+        assert not Lesson.all_schools.exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.req("C-01")
+def test_bulk_update_cannot_repoint_rows_at_another_schools_row(school_a, school_b):
+    with tenant_context(school_b.id):
+        riverside_course = Course.objects.create(title="Riverside Algebra")
+    with tenant_context(school_a.id):
+        lesson = Lesson.objects.create(course=Course.objects.create(title="Algebra"), title="L1")
+        lesson.course_id = riverside_course.id
+        with pytest.raises(CrossTenantWriteError):
+            Lesson.objects.bulk_update([lesson], ["course"])
+
+    with system_scope("test: the link is unchanged"):
+        assert Lesson.all_schools.get(pk=lesson.pk).course_id != riverside_course.id
+
+
+@pytest.mark.django_db
+@pytest.mark.req("NFR-SEC-002")
+def test_bulk_create_takes_the_school_from_the_context(school_a, school_b):
+    with tenant_context(school_a.id):
+        Course.objects.bulk_create([Course(title="Algebra"), Course(title="Geometry")])
+        with pytest.raises(CrossTenantWriteError):
+            Course.objects.bulk_create([Course(school=school_b, title="Smuggled")])
+
+    with system_scope("test: where the rows went"):
+        assert sorted(Course.all_schools.values_list("title", "school_id")) == [
+            ("Algebra", school_a.id),
+            ("Geometry", school_a.id),
+        ]
+
+
+@pytest.mark.django_db
+@pytest.mark.req("C-01")
+def test_links_within_one_school_save_on_every_path(school_a):
+    with tenant_context(school_a.id):
+        algebra = Course.objects.create(title="Algebra")
+        geometry = Course.objects.create(title="Geometry")
+        single = Lesson.objects.create(course=algebra, title="Single")
+        [bulk] = Lesson.objects.bulk_create([Lesson(course=algebra, title="Bulk")])
+        bulk.course = geometry
+        Lesson.objects.bulk_update([bulk], ["course"])
+
+        assert sorted(Lesson.objects.values_list("title", "course__title")) == [
+            ("Bulk", "Geometry"),
+            ("Single", "Algebra"),
+        ]
+        assert single.school_id == bulk.school_id == school_a.id

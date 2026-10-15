@@ -1,4 +1,5 @@
 import uuid
+from collections.abc import Sequence
 from typing import Any, Self
 
 from django.db import models
@@ -36,19 +37,46 @@ class TenantModel(BaseModel):
         return instance
 
     def save(self, *args: Any, **kwargs: Any) -> None:
+        type(self).guard_writes([self])
+        super().save(*args, **kwargs)
+        self._persisted_school_id = self.school_id
+
+    @classmethod
+    def guard_writes(cls, rows: Sequence["TenantModel"]) -> None:
+        """Apply the tenancy write rules to rows about to be saved, singly or in bulk.
+
+        New rows without a school get the current school. Every row must belong to
+        the current school, must not move from the school it was saved in, and must
+        not point at another school's row.
+        """
         school_id = ctx().school_id
         if school_id is None:
             raise MissingTenantContextError(
-                f"{type(self).__name__} saved with no school in the current context"
+                f"{cls.__name__} saved with no school in the current context"
             )
-        if self._state.adding and self.school_id is None:
-            self.school_id = school_id
-        if self.school_id != school_id:
-            raise CrossTenantWriteError(
-                f"{type(self).__name__} belongs to school {self.school_id}, "
-                f"not the current school {school_id}"
-            )
-        if not self._state.adding and self.school_id != self._persisted_school_id:
-            raise CrossTenantWriteError(f"{type(self).__name__} cannot move to another school")
-        super().save(*args, **kwargs)
-        self._persisted_school_id = self.school_id
+        for row in rows:
+            if row._state.adding and row.school_id is None:
+                row.school_id = school_id
+            if row.school_id != school_id:
+                raise CrossTenantWriteError(
+                    f"{cls.__name__} belongs to school {row.school_id}, "
+                    f"not the current school {school_id}"
+                )
+            if not row._state.adding and row.school_id != row._persisted_school_id:
+                raise CrossTenantWriteError(f"{cls.__name__} cannot move to another school")
+        cls._guard_links(rows)
+
+    @classmethod
+    def _guard_links(cls, rows: Sequence["TenantModel"]) -> None:
+        # The scoped manager only sees the current school, so a target it cannot find
+        # is in another school (or missing). One query per foreign key.
+        for field in cls._meta.concrete_fields:
+            target = field.related_model
+            if not (field.many_to_one and isinstance(target, type) and issubclass(target, TenantModel)):
+                continue
+            ids = {getattr(row, field.attname) for row in rows} - {None}
+            lookup = {f"{field.target_field.attname}__in": ids}
+            if ids and target.objects.filter(**lookup).count() != len(ids):
+                raise CrossTenantWriteError(
+                    f"{cls.__name__}.{field.name} points at a row outside the current school"
+                )
