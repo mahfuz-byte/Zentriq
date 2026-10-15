@@ -11,11 +11,12 @@ from core.errors import (
     SystemScopeRequiredError,
 )
 from core.tests.tenancy_app.models import Course, CourseTag, Lesson, Syllabus, Tag
+from modules.accounts.models import School
 
 
 @pytest.mark.django_db
 @pytest.mark.req("NFR-SEC-003")
-def test_another_schools_row_is_invisible_by_primary_key(school_a, school_b):
+def test_another_schools_row_is_invisible_by_primary_key(school_a: School, school_b: School) -> None:
     with tenant_context(school_b.id):
         other = Course.objects.create(school=school_b, title="Riverside Algebra")
 
@@ -27,7 +28,7 @@ def test_another_schools_row_is_invisible_by_primary_key(school_a, school_b):
 
 @pytest.mark.django_db
 @pytest.mark.req("NFR-SEC-003")
-def test_counts_and_iteration_see_only_the_current_school(school_a, school_b):
+def test_counts_and_iteration_see_only_the_current_school(school_a: School, school_b: School) -> None:
     with tenant_context(school_a.id):
         Course.objects.create(school=school_a, title="Greenfield Algebra")
     with tenant_context(school_b.id):
@@ -42,14 +43,14 @@ def test_counts_and_iteration_see_only_the_current_school(school_a, school_b):
 
 @pytest.mark.django_db
 @pytest.mark.req("P1-T02")
-def test_querying_without_a_tenant_context_fails_loudly(school_a):
+def test_querying_without_a_tenant_context_fails_loudly(school_a: School) -> None:
     with pytest.raises(MissingTenantContextError):
         list(Course.objects.all())
 
 
 @pytest.mark.django_db
 @pytest.mark.req("P1-T02")
-def test_all_schools_is_refused_outside_a_system_scope(school_a):
+def test_all_schools_is_refused_outside_a_system_scope(school_a: School) -> None:
     with pytest.raises(SystemScopeRequiredError):
         list(Course.all_schools.all())
     with tenant_context(school_a.id), pytest.raises(SystemScopeRequiredError):
@@ -58,7 +59,7 @@ def test_all_schools_is_refused_outside_a_system_scope(school_a):
 
 @pytest.mark.django_db
 @pytest.mark.req("P1-T02")
-def test_all_schools_sees_every_school_inside_a_system_scope(school_a, school_b):
+def test_all_schools_sees_every_school_inside_a_system_scope(school_a: School, school_b: School) -> None:
     with tenant_context(school_a.id):
         Course.objects.create(school=school_a, title="Greenfield Algebra")
     with tenant_context(school_b.id):
@@ -73,13 +74,13 @@ def test_all_schools_sees_every_school_inside_a_system_scope(school_a, school_b)
 
 @pytest.mark.req("P1-T02")
 @pytest.mark.parametrize("reason", ["", "   "])
-def test_system_scope_needs_a_reason(reason):
+def test_system_scope_needs_a_reason(reason: str) -> None:
     with pytest.raises(ValueError), system_scope(reason):
         pass
 
 
 @pytest.mark.req("P1-T02")
-def test_entering_a_system_scope_logs_the_reason(caplog):
+def test_entering_a_system_scope_logs_the_reason(caplog: pytest.LogCaptureFixture) -> None:
     with caplog.at_level(logging.INFO, logger="as.tenancy"), system_scope("nightly retention"):
         pass
     [record] = caplog.records
@@ -88,7 +89,7 @@ def test_entering_a_system_scope_logs_the_reason(caplog):
 
 @pytest.mark.django_db
 @pytest.mark.req("NFR-SEC-003")
-def test_update_in_one_school_leaves_other_schools_untouched(school_a, school_b):
+def test_update_in_one_school_leaves_other_schools_untouched(school_a: School, school_b: School) -> None:
     with tenant_context(school_a.id):
         Course.objects.create(school=school_a, title="Algebra")
     with tenant_context(school_b.id):
@@ -103,7 +104,7 @@ def test_update_in_one_school_leaves_other_schools_untouched(school_a, school_b)
 
 @pytest.mark.django_db
 @pytest.mark.req("NFR-SEC-003")
-def test_delete_in_one_school_leaves_other_schools_rows(school_a, school_b):
+def test_delete_in_one_school_leaves_other_schools_rows(school_a: School, school_b: School) -> None:
     with tenant_context(school_a.id):
         Course.objects.create(school=school_a, title="Algebra")
     with tenant_context(school_b.id):
@@ -119,7 +120,7 @@ def test_delete_in_one_school_leaves_other_schools_rows(school_a, school_b):
 
 @pytest.mark.django_db
 @pytest.mark.req("NFR-SEC-002")
-def test_a_new_row_takes_its_school_from_the_context(school_a):
+def test_a_new_row_takes_its_school_from_the_context(school_a: School) -> None:
     with tenant_context(school_a.id):
         course = Course.objects.create(title="Algebra")
     assert course.school_id == school_a.id
@@ -127,7 +128,7 @@ def test_a_new_row_takes_its_school_from_the_context(school_a):
 
 @pytest.mark.django_db
 @pytest.mark.req("NFR-SEC-002")
-def test_a_school_supplied_as_input_is_never_honoured(school_a, school_b):
+def test_a_school_supplied_as_input_is_never_honoured(school_a: School, school_b: School) -> None:
     with tenant_context(school_a.id), pytest.raises(CrossTenantWriteError):
         Course.objects.create(school=school_b, title="Smuggled")
 
@@ -137,7 +138,7 @@ def test_a_school_supplied_as_input_is_never_honoured(school_a, school_b):
 
 @pytest.mark.django_db
 @pytest.mark.req("NFR-SEC-002")
-def test_an_existing_row_cannot_move_to_another_school(school_a, school_b):
+def test_an_existing_row_cannot_move_to_another_school(school_a: School, school_b: School) -> None:
     with tenant_context(school_a.id):
         course = Course.objects.create(title="Algebra")
 
@@ -151,14 +152,14 @@ def test_an_existing_row_cannot_move_to_another_school(school_a, school_b):
 
 @pytest.mark.django_db
 @pytest.mark.req("P1-T02")
-def test_saving_without_a_tenant_context_fails_loudly(school_a):
+def test_saving_without_a_tenant_context_fails_loudly(school_a: School) -> None:
     with pytest.raises(MissingTenantContextError):
         Course(school=school_a, title="Algebra").save()
 
 
 @pytest.mark.django_db
 @pytest.mark.req("C-01")
-def test_a_row_cannot_link_to_another_schools_row(school_a, school_b):
+def test_a_row_cannot_link_to_another_schools_row(school_a: School, school_b: School) -> None:
     with tenant_context(school_b.id):
         riverside_course = Course.objects.create(title="Riverside Algebra")
 
@@ -171,7 +172,7 @@ def test_a_row_cannot_link_to_another_schools_row(school_a, school_b):
 
 @pytest.mark.django_db
 @pytest.mark.req("C-01")
-def test_bulk_create_cannot_link_to_another_schools_row(school_a, school_b):
+def test_bulk_create_cannot_link_to_another_schools_row(school_a: School, school_b: School) -> None:
     with tenant_context(school_a.id):
         greenfield_course = Course.objects.create(title="Greenfield Algebra")
     with tenant_context(school_b.id):
@@ -191,7 +192,7 @@ def test_bulk_create_cannot_link_to_another_schools_row(school_a, school_b):
 
 @pytest.mark.django_db
 @pytest.mark.req("C-01")
-def test_bulk_update_cannot_repoint_rows_at_another_schools_row(school_a, school_b):
+def test_bulk_update_cannot_repoint_rows_at_another_schools_row(school_a: School, school_b: School) -> None:
     with tenant_context(school_b.id):
         riverside_course = Course.objects.create(title="Riverside Algebra")
     with tenant_context(school_a.id):
@@ -206,7 +207,7 @@ def test_bulk_update_cannot_repoint_rows_at_another_schools_row(school_a, school
 
 @pytest.mark.django_db
 @pytest.mark.req("NFR-SEC-002")
-def test_bulk_create_takes_the_school_from_the_context(school_a, school_b):
+def test_bulk_create_takes_the_school_from_the_context(school_a: School, school_b: School) -> None:
     with tenant_context(school_a.id):
         Course.objects.bulk_create([Course(title="Algebra"), Course(title="Geometry")])
         with pytest.raises(CrossTenantWriteError):
@@ -221,7 +222,7 @@ def test_bulk_create_takes_the_school_from_the_context(school_a, school_b):
 
 @pytest.mark.django_db
 @pytest.mark.req("C-01")
-def test_links_within_one_school_save_on_every_path(school_a):
+def test_links_within_one_school_save_on_every_path(school_a: School) -> None:
     with tenant_context(school_a.id):
         algebra = Course.objects.create(title="Algebra")
         geometry = Course.objects.create(title="Geometry")
@@ -245,7 +246,7 @@ def _corrupt_link(lesson: Lesson, course: Course) -> None:
 
 @pytest.mark.django_db
 @pytest.mark.req("NFR-SEC-003")
-def test_following_a_link_never_returns_another_schools_row(school_a, school_b):
+def test_following_a_link_never_returns_another_schools_row(school_a: School, school_b: School) -> None:
     with tenant_context(school_b.id):
         riverside_course = Course.objects.create(title="Riverside Algebra")
     with tenant_context(school_a.id):
@@ -260,7 +261,7 @@ def test_following_a_link_never_returns_another_schools_row(school_a, school_b):
 
 @pytest.mark.django_db
 @pytest.mark.req("NFR-SEC-003")
-def test_reverse_relations_never_include_another_schools_rows(school_a, school_b):
+def test_reverse_relations_never_include_another_schools_rows(school_a: School, school_b: School) -> None:
     with tenant_context(school_a.id):
         algebra = Course.objects.create(title="Algebra")
         Lesson.objects.create(course=algebra, title="Greenfield lesson")
@@ -276,7 +277,7 @@ def test_reverse_relations_never_include_another_schools_rows(school_a, school_b
 
 @pytest.mark.django_db
 @pytest.mark.req("P1-T02")
-def test_following_a_relation_without_a_tenant_context_fails_loudly(school_a):
+def test_following_a_relation_without_a_tenant_context_fails_loudly(school_a: School) -> None:
     with tenant_context(school_a.id):
         algebra = Course.objects.create(title="Algebra")
         lesson = Lesson.objects.create(course=algebra, title="L1")
@@ -290,7 +291,7 @@ def test_following_a_relation_without_a_tenant_context_fails_loudly(school_a):
 
 @pytest.mark.django_db
 @pytest.mark.req("NFR-SEC-002")
-def test_update_cannot_move_rows_to_another_school(school_a, school_b):
+def test_update_cannot_move_rows_to_another_school(school_a: School, school_b: School) -> None:
     with tenant_context(school_a.id):
         Course.objects.create(title="Algebra")
         with pytest.raises(CrossTenantWriteError):
@@ -304,7 +305,7 @@ def test_update_cannot_move_rows_to_another_school(school_a, school_b):
 
 @pytest.mark.django_db
 @pytest.mark.req("C-01")
-def test_update_cannot_link_rows_to_another_schools_row(school_a, school_b):
+def test_update_cannot_link_rows_to_another_schools_row(school_a: School, school_b: School) -> None:
     with tenant_context(school_b.id):
         riverside_course = Course.objects.create(title="Riverside Algebra")
     with tenant_context(school_a.id):
@@ -325,7 +326,7 @@ def test_update_cannot_link_rows_to_another_schools_row(school_a, school_b):
 
 @pytest.mark.django_db
 @pytest.mark.req("C-01")
-def test_update_refuses_a_link_it_cannot_check(school_a):
+def test_update_refuses_a_link_it_cannot_check(school_a: School) -> None:
     with tenant_context(school_a.id):
         Lesson.objects.create(course=Course.objects.create(title="Algebra"), title="L1")
         with pytest.raises(CrossTenantWriteError):
@@ -334,7 +335,7 @@ def test_update_refuses_a_link_it_cannot_check(school_a):
 
 @pytest.mark.django_db
 @pytest.mark.req("C-01")
-def test_a_one_to_one_link_cannot_cross_schools(school_a, school_b):
+def test_a_one_to_one_link_cannot_cross_schools(school_a: School, school_b: School) -> None:
     with tenant_context(school_b.id):
         riverside_course = Course.objects.create(title="Riverside Algebra")
 
@@ -344,7 +345,7 @@ def test_a_one_to_one_link_cannot_cross_schools(school_a, school_b):
 
 @pytest.mark.django_db
 @pytest.mark.req("C-01")
-def test_a_many_to_many_link_cannot_cross_schools(school_a, school_b):
+def test_a_many_to_many_link_cannot_cross_schools(school_a: School, school_b: School) -> None:
     with tenant_context(school_b.id):
         riverside_tag = Tag.objects.create(name="exam-prep")
     with tenant_context(school_a.id):
@@ -360,7 +361,7 @@ def test_a_many_to_many_link_cannot_cross_schools(school_a, school_b):
 
 @pytest.mark.django_db
 @pytest.mark.req("P1-T02")
-def test_a_system_job_can_delete_and_follow_links_across_schools(school_a, school_b):
+def test_a_system_job_can_delete_and_follow_links_across_schools(school_a: School, school_b: School) -> None:
     with tenant_context(school_a.id):
         Lesson.objects.create(course=Course.objects.create(title="Algebra"), title="A1")
     with tenant_context(school_b.id):
@@ -377,7 +378,7 @@ def test_a_system_job_can_delete_and_follow_links_across_schools(school_a, schoo
 
 @pytest.mark.django_db
 @pytest.mark.req("NFR-SEC-003")
-def test_objects_stays_scoped_inside_a_system_scope(school_a, school_b):
+def test_objects_stays_scoped_inside_a_system_scope(school_a: School, school_b: School) -> None:
     with tenant_context(school_a.id):
         Course.objects.create(title="Greenfield Algebra")
     with tenant_context(school_b.id):
@@ -389,7 +390,7 @@ def test_objects_stays_scoped_inside_a_system_scope(school_a, school_b):
 
 @pytest.mark.django_db
 @pytest.mark.req("C-01")
-def test_bulk_create_allows_links_within_the_same_batch(school_a):
+def test_bulk_create_allows_links_within_the_same_batch(school_a: School) -> None:
     with tenant_context(school_a.id):
         algebra = Course(title="Algebra")
         calculus = Course(title="Calculus", prerequisite=algebra)
@@ -400,7 +401,7 @@ def test_bulk_create_allows_links_within_the_same_batch(school_a):
 
 @pytest.mark.django_db
 @pytest.mark.req("C-01")
-def test_a_self_link_to_another_schools_row_is_still_refused(school_a, school_b):
+def test_a_self_link_to_another_schools_row_is_still_refused(school_a: School, school_b: School) -> None:
     with tenant_context(school_b.id):
         riverside_course = Course.objects.create(title="Riverside Algebra")
 

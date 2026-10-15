@@ -4,8 +4,8 @@ from typing import Any, Self, TypeGuard
 
 from django.db import models
 
-from core.context import ctx
-from core.errors import CrossTenantWriteError, MissingTenantContextError
+from core.context import require_school_id
+from core.errors import CrossTenantWriteError
 from core.managers import AllSchoolsManager, TenantBaseManager, TenantManager
 
 
@@ -35,14 +35,27 @@ class TenantModel(BaseModel):
     _persisted_school_id: uuid.UUID | None = None
 
     @classmethod
-    def from_db(cls, db: str | None, field_names: Any, values: Any) -> Self:
+    def from_db(
+        cls,
+        db: str | None,
+        field_names: Sequence[str],
+        values: Sequence[Any],  # reason: raw column values of any type, as in Django
+    ) -> Self:
         instance = super().from_db(db, field_names, values)
-        instance._persisted_school_id = instance.school_id
+        instance._mark_persisted()
         return instance
 
-    def save(self, *args: Any, **kwargs: Any) -> None:
+    def save(
+        self,
+        *args: Any,  # reason: passed through to Django's save unchanged
+        **kwargs: Any,  # reason: as for *args
+    ) -> None:
         type(self).guard_writes([self])
         super().save(*args, **kwargs)
+        self._mark_persisted()
+
+    def _mark_persisted(self) -> None:
+        """Record the school this row now has in the database."""
         self._persisted_school_id = self.school_id
 
     @classmethod
@@ -53,11 +66,7 @@ class TenantModel(BaseModel):
         the current school, must not move from the school it was saved in, and must
         not point at another school's row.
         """
-        school_id = ctx().school_id
-        if school_id is None:
-            raise MissingTenantContextError(
-                f"{cls.__name__} saved with no school in the current context"
-            )
+        school_id = require_school_id(f"saving {cls.__name__}")
         for row in rows:
             if row._state.adding and row.school_id is None:
                 row.school_id = school_id
@@ -71,11 +80,11 @@ class TenantModel(BaseModel):
         cls._guard_links(rows)
 
     @classmethod
-    def guard_update(cls, values: dict[str, Any]) -> None:
+    def guard_update(cls, values: dict[str, Any]) -> None:  # reason: column values of any type
         """Apply the tenancy write rules to the values of a QuerySet.update()."""
         if values.keys() & {"school", "school_id"}:
             raise CrossTenantWriteError(f"{cls.__name__} rows cannot move to another school")
-        links: dict[models.ForeignKey[Any, Any], set[Any]] = {}
+        links: dict[models.ForeignKey[Any, Any], set[Any]] = {}  # reason: any key type
         for name, value in values.items():
             field = cls._meta.get_field(name)
             if not _links_to_tenant_rows(field) or value is None:
@@ -92,7 +101,7 @@ class TenantModel(BaseModel):
 
     @classmethod
     def _guard_links(cls, rows: Sequence["TenantModel"]) -> None:
-        links = {}
+        links: dict[models.ForeignKey[Any, Any], set[Any]] = {}  # reason: any key type
         for field in cls._meta.concrete_fields:
             if not _links_to_tenant_rows(field):
                 continue
@@ -105,7 +114,10 @@ class TenantModel(BaseModel):
         cls._check_links(links)
 
     @classmethod
-    def _check_links(cls, links: dict[models.ForeignKey[Any, Any], set[Any]]) -> None:
+    def _check_links(
+        cls,
+        links: dict[models.ForeignKey[Any, Any], set[Any]],  # reason: any key type
+    ) -> None:
         # The scoped manager only sees the current school, so a target it cannot find
         # is in another school (or missing). One query per foreign key.
         for field, ids in links.items():

@@ -12,19 +12,19 @@ SESSION_1 = UUID("00000000-0000-0000-0000-000000000051")
 
 
 @pytest.mark.req("P1-T02")
-def test_outside_any_context_there_is_no_school():
+def test_outside_any_context_there_is_no_school() -> None:
     assert ctx().school_id is None
 
 
 @pytest.mark.req("P1-T02")
-def test_tenant_context_sets_the_school_only_inside_the_block():
+def test_tenant_context_sets_the_school_only_inside_the_block() -> None:
     with tenant_context(SCHOOL_A):
         assert ctx().school_id == SCHOOL_A
     assert ctx().school_id is None
 
 
 @pytest.mark.req("P1-T02")
-def test_request_context_exposes_the_request_identity():
+def test_request_context_exposes_the_request_identity() -> None:
     with request_context(
         request_id="req-123",
         school_id=SCHOOL_A,
@@ -44,7 +44,7 @@ def test_request_context_exposes_the_request_identity():
 
 
 @pytest.mark.req("P1-T02")
-def test_nested_tenant_context_restores_the_outer_school():
+def test_nested_tenant_context_restores_the_outer_school() -> None:
     with tenant_context(SCHOOL_A):
         with tenant_context(SCHOOL_B):
             assert ctx().school_id == SCHOOL_B
@@ -52,14 +52,14 @@ def test_nested_tenant_context_restores_the_outer_school():
 
 
 @pytest.mark.req("P1-T02")
-def test_context_does_not_leak_when_the_block_raises():
+def test_context_does_not_leak_when_the_block_raises() -> None:
     with pytest.raises(RuntimeError), tenant_context(SCHOOL_A):
         raise RuntimeError("task failed")
     assert ctx().school_id is None
 
 
 @pytest.mark.req("P1-T02")
-def test_context_is_not_visible_from_another_thread():
+def test_context_is_not_visible_from_another_thread() -> None:
     seen: list[UUID | None] = []
     with tenant_context(SCHOOL_A):
         worker = threading.Thread(target=lambda: seen.append(ctx().school_id))

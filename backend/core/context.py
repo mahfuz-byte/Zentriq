@@ -5,6 +5,8 @@ from dataclasses import dataclass, replace
 import logging
 from uuid import UUID
 
+from core.errors import MissingTenantContextError
+
 logger = logging.getLogger("as.tenancy")
 
 
@@ -25,6 +27,14 @@ _current: ContextVar[RequestContext] = ContextVar("as_request_context", default=
 
 def ctx() -> RequestContext:
     return _current.get()
+
+
+def require_school_id(what: str) -> UUID:
+    """The current school, or MissingTenantContextError naming `what` needed it."""
+    school_id = ctx().school_id
+    if school_id is None:
+        raise MissingTenantContextError(f"{what} needs a school in the current context")
+    return school_id
 
 
 @contextmanager
