@@ -113,8 +113,9 @@ class TenantModel(BaseModel):
 
 def _links_to_tenant_rows(field: Any) -> TypeGuard["models.ForeignKey[Any, Any]"]:  # reason: any model field
     target = getattr(field, "related_model", None)
+    # ForeignKey includes OneToOneField.
     return (
-        field.many_to_one is True
+        isinstance(field, models.ForeignKey)
         and isinstance(target, type)
         and issubclass(target, TenantModel)
     )

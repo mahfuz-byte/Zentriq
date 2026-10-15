@@ -1,6 +1,7 @@
 import logging
 
 import pytest
+from django.db import transaction
 from django.db.models import F
 
 from core.context import system_scope, tenant_context
@@ -9,7 +10,7 @@ from core.errors import (
     MissingTenantContextError,
     SystemScopeRequiredError,
 )
-from core.tests.tenancy_app.models import Course, Lesson
+from core.tests.tenancy_app.models import Course, CourseTag, Lesson, Syllabus, Tag
 
 
 @pytest.mark.django_db
@@ -329,3 +330,29 @@ def test_update_refuses_a_link_it_cannot_check(school_a):
         Lesson.objects.create(course=Course.objects.create(title="Algebra"), title="L1")
         with pytest.raises(CrossTenantWriteError):
             Lesson.objects.update(course_id=F("course_id"))
+
+
+@pytest.mark.django_db
+@pytest.mark.req("C-01")
+def test_a_one_to_one_link_cannot_cross_schools(school_a, school_b):
+    with tenant_context(school_b.id):
+        riverside_course = Course.objects.create(title="Riverside Algebra")
+
+    with tenant_context(school_a.id), pytest.raises(CrossTenantWriteError):
+        Syllabus.objects.create(course=riverside_course)
+
+
+@pytest.mark.django_db
+@pytest.mark.req("C-01")
+def test_a_many_to_many_link_cannot_cross_schools(school_a, school_b):
+    with tenant_context(school_b.id):
+        riverside_tag = Tag.objects.create(name="exam-prep")
+    with tenant_context(school_a.id):
+        algebra = Course.objects.create(title="Algebra")
+        # add() writes inside atomic(savepoint=False); give the refused write its own
+        # savepoint so the test's transaction stays usable.
+        with pytest.raises(CrossTenantWriteError), transaction.atomic():
+            algebra.tags.add(riverside_tag)
+
+    with system_scope("test: nothing was linked"):
+        assert not CourseTag.all_schools.exists()
