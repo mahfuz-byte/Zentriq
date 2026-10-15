@@ -2,7 +2,7 @@ import uuid
 
 from django.db import models
 
-from core.managers import TenantManager
+from core.managers import AllSchoolsManager, TenantManager
 
 
 class BaseModel(models.Model):
@@ -18,6 +18,7 @@ class TenantModel(BaseModel):
     school = models.ForeignKey("accounts.School", on_delete=models.PROTECT)
 
     objects = TenantManager()
+    all_schools = AllSchoolsManager()
 
     class Meta:
         abstract = True

@@ -1,8 +1,11 @@
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+import logging
 from uuid import UUID
+
+logger = logging.getLogger("as.tenancy")
 
 
 @dataclass(frozen=True)
@@ -13,6 +16,8 @@ class RequestContext:
     roles: tuple[str, ...] = ()
     active_role: str | None = None
     session_id: UUID | None = None
+    # Set only inside `system_scope`: why this code may read across schools.
+    system_scope_reason: str | None = None
 
 
 _current: ContextVar[RequestContext] = ContextVar("as_request_context", default=RequestContext())
@@ -59,3 +64,14 @@ def request_context(
     )
     with _entered(context) as entered:
         yield entered
+
+
+@contextmanager
+def system_scope(reason: str) -> Iterator[RequestContext]:
+    """Allow the unscoped `all_schools` manager for this block. Every use is recorded."""
+    if not reason.strip():
+        raise ValueError("system_scope needs a reason")
+    # P1-T07 replaces this log event with an audit record.
+    logger.info("system_scope entered", extra={"reason": reason, "school_id": ctx().school_id})
+    with _entered(replace(ctx(), system_scope_reason=reason)) as context:
+        yield context
