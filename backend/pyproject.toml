@@ -1,0 +1,25 @@
+[project]
+name = "as-backend"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "django>=5.2,<5.3",
+    "django-environ>=0.12",
+    "psycopg[binary,pool]>=3.2",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-django>=4.9",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.test"
+addopts = "--strict-markers -q"
+markers = [
+    "req(*ids): requirement or task IDs this test proves (see BUILD_PLAN §9.2)",
+]
