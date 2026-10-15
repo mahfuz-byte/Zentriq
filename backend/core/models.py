@@ -92,13 +92,17 @@ class TenantModel(BaseModel):
 
     @classmethod
     def _guard_links(cls, rows: Sequence["TenantModel"]) -> None:
-        cls._check_links(
-            {
-                field: {getattr(row, field.attname) for row in rows} - {None}
-                for field in cls._meta.concrete_fields
-                if _links_to_tenant_rows(field)
-            }
-        )
+        links = {}
+        for field in cls._meta.concrete_fields:
+            if not _links_to_tenant_rows(field):
+                continue
+            ids = {getattr(row, field.attname) for row in rows} - {None}
+            if field.related_model is cls:
+                # Rows in this batch already passed the school checks, and the ones
+                # being created can't be found by a query yet.
+                ids -= {getattr(row, field.target_field.attname) for row in rows}
+            links[field] = ids
+        cls._check_links(links)
 
     @classmethod
     def _check_links(cls, links: dict[models.ForeignKey[Any, Any], set[Any]]) -> None:

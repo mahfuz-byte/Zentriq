@@ -385,3 +385,29 @@ def test_objects_stays_scoped_inside_a_system_scope(school_a, school_b):
 
     with tenant_context(school_a.id), system_scope("test: objects is unchanged"):
         assert [c.title for c in Course.objects.all()] == ["Greenfield Algebra"]
+
+
+@pytest.mark.django_db
+@pytest.mark.req("C-01")
+def test_bulk_create_allows_links_within_the_same_batch(school_a):
+    with tenant_context(school_a.id):
+        algebra = Course(title="Algebra")
+        calculus = Course(title="Calculus", prerequisite=algebra)
+        Course.objects.bulk_create([algebra, calculus])
+
+        assert Course.objects.get(title="Calculus").prerequisite == algebra
+
+
+@pytest.mark.django_db
+@pytest.mark.req("C-01")
+def test_a_self_link_to_another_schools_row_is_still_refused(school_a, school_b):
+    with tenant_context(school_b.id):
+        riverside_course = Course.objects.create(title="Riverside Algebra")
+
+    with tenant_context(school_a.id):
+        with pytest.raises(CrossTenantWriteError):
+            Course.objects.bulk_create(
+                [Course(title="Fine"), Course(title="Calculus", prerequisite=riverside_course)]
+            )
+        with pytest.raises(CrossTenantWriteError):
+            Course.objects.create(title="Calculus", prerequisite=riverside_course)
