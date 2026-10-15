@@ -1,6 +1,7 @@
 import logging
 
 import pytest
+from django.db.models import F
 
 from core.context import system_scope, tenant_context
 from core.errors import (
@@ -284,3 +285,47 @@ def test_following_a_relation_without_a_tenant_context_fails_loudly(school_a):
         list(algebra.lessons.all())
     with pytest.raises(MissingTenantContextError):
         lesson.course  # noqa: B018 - the attribute access is the behaviour under test
+
+
+@pytest.mark.django_db
+@pytest.mark.req("NFR-SEC-002")
+def test_update_cannot_move_rows_to_another_school(school_a, school_b):
+    with tenant_context(school_a.id):
+        Course.objects.create(title="Algebra")
+        with pytest.raises(CrossTenantWriteError):
+            Course.objects.update(school_id=school_b.id)
+        with pytest.raises(CrossTenantWriteError):
+            Course.objects.update(school=school_b)
+
+    with system_scope("test: the row stayed put"):
+        assert not Course.all_schools.filter(school=school_b).exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.req("C-01")
+def test_update_cannot_link_rows_to_another_schools_row(school_a, school_b):
+    with tenant_context(school_b.id):
+        riverside_course = Course.objects.create(title="Riverside Algebra")
+    with tenant_context(school_a.id):
+        lesson = Lesson.objects.create(course=Course.objects.create(title="Algebra"), title="L1")
+        with pytest.raises(CrossTenantWriteError):
+            Lesson.objects.update(course=riverside_course)
+        with pytest.raises(CrossTenantWriteError):
+            Lesson.objects.update(course_id=riverside_course.id)
+
+    # add() in school B updates through the scoped base manager, so it can't reach
+    # school A's lesson at all.
+    with tenant_context(school_b.id):
+        riverside_course.lessons.add(lesson)
+
+    with system_scope("test: the link is unchanged"):
+        assert Lesson.all_schools.get(pk=lesson.pk).course_id != riverside_course.id
+
+
+@pytest.mark.django_db
+@pytest.mark.req("C-01")
+def test_update_refuses_a_link_it_cannot_check(school_a):
+    with tenant_context(school_a.id):
+        Lesson.objects.create(course=Course.objects.create(title="Algebra"), title="L1")
+        with pytest.raises(CrossTenantWriteError):
+            Lesson.objects.update(course_id=F("course_id"))

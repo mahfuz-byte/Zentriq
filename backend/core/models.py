@@ -1,6 +1,6 @@
 import uuid
 from collections.abc import Sequence
-from typing import Any, Self
+from typing import Any, Self, TypeGuard
 
 from django.db import models
 
@@ -70,16 +70,51 @@ class TenantModel(BaseModel):
         cls._guard_links(rows)
 
     @classmethod
+    def guard_update(cls, values: dict[str, Any]) -> None:
+        """Apply the tenancy write rules to the values of a QuerySet.update()."""
+        if values.keys() & {"school", "school_id"}:
+            raise CrossTenantWriteError(f"{cls.__name__} rows cannot move to another school")
+        links: dict[models.ForeignKey[Any, Any], set[Any]] = {}
+        for name, value in values.items():
+            field = cls._meta.get_field(name)
+            if not _links_to_tenant_rows(field) or value is None:
+                continue
+            if hasattr(value, "resolve_expression"):
+                raise CrossTenantWriteError(
+                    f"{cls.__name__}.{field.name} cannot be updated from an expression: "
+                    "its target school can't be checked"
+                )
+            if isinstance(value, models.Model):
+                value = getattr(value, field.target_field.attname)
+            links[field] = {value}
+        cls._check_links(links)
+
+    @classmethod
     def _guard_links(cls, rows: Sequence["TenantModel"]) -> None:
+        cls._check_links(
+            {
+                field: {getattr(row, field.attname) for row in rows} - {None}
+                for field in cls._meta.concrete_fields
+                if _links_to_tenant_rows(field)
+            }
+        )
+
+    @classmethod
+    def _check_links(cls, links: dict[models.ForeignKey[Any, Any], set[Any]]) -> None:
         # The scoped manager only sees the current school, so a target it cannot find
         # is in another school (or missing). One query per foreign key.
-        for field in cls._meta.concrete_fields:
-            target = field.related_model
-            if not (field.many_to_one and isinstance(target, type) and issubclass(target, TenantModel)):
-                continue
-            ids = {getattr(row, field.attname) for row in rows} - {None}
+        for field, ids in links.items():
             lookup = {f"{field.target_field.attname}__in": ids}
-            if ids and target.objects.filter(**lookup).count() != len(ids):
+            if ids and field.related_model.objects.filter(**lookup).count() != len(ids):
                 raise CrossTenantWriteError(
                     f"{cls.__name__}.{field.name} points at a row outside the current school"
                 )
+
+
+def _links_to_tenant_rows(field: Any) -> TypeGuard["models.ForeignKey[Any, Any]"]:  # reason: any model field
+    target = getattr(field, "related_model", None)
+    return (
+        field.many_to_one is True
+        and isinstance(target, type)
+        and issubclass(target, TenantModel)
+    )

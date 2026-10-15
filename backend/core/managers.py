@@ -1,4 +1,5 @@
 from collections.abc import Iterable, Sequence
+from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any, TypeVar
 
 from django.db import models
@@ -10,6 +11,8 @@ if TYPE_CHECKING:
     from core.models import TenantModel
 
 _M = TypeVar("_M", bound=models.Model)
+
+_rows_already_guarded: ContextVar[bool] = ContextVar("as_rows_already_guarded", default=False)
 
 
 class TenantQuerySet(models.QuerySet[_M]):
@@ -26,7 +29,18 @@ class TenantQuerySet(models.QuerySet[_M]):
     def bulk_update(self, objs: Iterable[_M], fields: Sequence[str], *args: Any, **kwargs: Any) -> int:
         rows = list(objs)
         self._tenant_model().guard_writes(rows)  # type: ignore[arg-type]  # reason: as above
-        return super().bulk_update(rows, fields, *args, **kwargs)
+        # Django implements bulk_update as update() with Case/When expressions. The
+        # rows were checked above, so that inner update() skips its own guard.
+        token = _rows_already_guarded.set(True)
+        try:
+            return super().bulk_update(rows, fields, *args, **kwargs)
+        finally:
+            _rows_already_guarded.reset(token)
+
+    def update(self, **kwargs: Any) -> int:
+        if not _rows_already_guarded.get():
+            self._tenant_model().guard_update(kwargs)
+        return super().update(**kwargs)
 
     def _tenant_model(self) -> "type[TenantModel]":
         return self.model  # type: ignore[return-value]  # reason: only TenantModel uses this queryset
