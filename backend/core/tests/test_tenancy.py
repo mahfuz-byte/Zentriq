@@ -233,3 +233,54 @@ def test_links_within_one_school_save_on_every_path(school_a):
             ("Single", "Algebra"),
         ]
         assert single.school_id == bulk.school_id == school_a.id
+
+
+def _corrupt_link(lesson: Lesson, course: Course) -> None:
+    """Point a lesson at another school's course, bypassing the write guards."""
+    with system_scope("test: corrupt a link"):
+        Lesson.all_schools.filter(pk=lesson.pk).update(course_id=course.pk)
+
+
+@pytest.mark.django_db
+@pytest.mark.req("NFR-SEC-003")
+def test_following_a_link_never_returns_another_schools_row(school_a, school_b):
+    with tenant_context(school_b.id):
+        riverside_course = Course.objects.create(title="Riverside Algebra")
+    with tenant_context(school_a.id):
+        lesson = Lesson.objects.create(course=Course.objects.create(title="Algebra"), title="L1")
+    _corrupt_link(lesson, riverside_course)
+
+    with tenant_context(school_a.id):
+        reloaded = Lesson.objects.get(pk=lesson.pk)
+        with pytest.raises(Course.DoesNotExist):
+            reloaded.course  # noqa: B018 - the attribute access is the behaviour under test
+
+
+@pytest.mark.django_db
+@pytest.mark.req("NFR-SEC-003")
+def test_reverse_relations_never_include_another_schools_rows(school_a, school_b):
+    with tenant_context(school_a.id):
+        algebra = Course.objects.create(title="Algebra")
+        Lesson.objects.create(course=algebra, title="Greenfield lesson")
+    with tenant_context(school_b.id):
+        riverside_lesson = Lesson.objects.create(
+            course=Course.objects.create(title="Riverside Algebra"), title="Riverside lesson"
+        )
+    _corrupt_link(riverside_lesson, algebra)
+
+    with tenant_context(school_a.id):
+        assert [lesson.title for lesson in algebra.lessons.all()] == ["Greenfield lesson"]
+
+
+@pytest.mark.django_db
+@pytest.mark.req("P1-T02")
+def test_following_a_relation_without_a_tenant_context_fails_loudly(school_a):
+    with tenant_context(school_a.id):
+        algebra = Course.objects.create(title="Algebra")
+        lesson = Lesson.objects.create(course=algebra, title="L1")
+        lesson = Lesson.objects.get(pk=lesson.pk)
+
+    with pytest.raises(MissingTenantContextError):
+        list(algebra.lessons.all())
+    with pytest.raises(MissingTenantContextError):
+        lesson.course  # noqa: B018 - the attribute access is the behaviour under test

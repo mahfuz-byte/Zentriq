@@ -26,6 +26,9 @@ class TenantModel(BaseModel):
 
     class Meta:
         abstract = True
+        # Django uses the base manager for forward foreign keys, save()'s UPDATE and
+        # delete cascades. Scoping it keeps all of those inside the current school.
+        base_manager_name = "objects"
 
     # The school this row has in the database; None until it is saved or loaded.
     _persisted_school_id: uuid.UUID | None = None
