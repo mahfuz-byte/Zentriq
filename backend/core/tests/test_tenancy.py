@@ -3,7 +3,11 @@ import logging
 import pytest
 
 from core.context import system_scope, tenant_context
-from core.errors import MissingTenantContextError, SystemScopeRequiredError
+from core.errors import (
+    CrossTenantWriteError,
+    MissingTenantContextError,
+    SystemScopeRequiredError,
+)
 from core.tests.tenancy_app.models import Course
 
 
@@ -109,3 +113,42 @@ def test_delete_in_one_school_leaves_other_schools_rows(school_a, school_b):
     with system_scope("test: check school B"):
         assert Course.all_schools.filter(school=school_b).count() == 1
         assert not Course.all_schools.filter(school=school_a).exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.req("NFR-SEC-002")
+def test_a_new_row_takes_its_school_from_the_context(school_a):
+    with tenant_context(school_a.id):
+        course = Course.objects.create(title="Algebra")
+    assert course.school_id == school_a.id
+
+
+@pytest.mark.django_db
+@pytest.mark.req("NFR-SEC-002")
+def test_a_school_supplied_as_input_is_never_honoured(school_a, school_b):
+    with tenant_context(school_a.id), pytest.raises(CrossTenantWriteError):
+        Course.objects.create(school=school_b, title="Smuggled")
+
+    with system_scope("test: nothing was written"):
+        assert not Course.all_schools.exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.req("NFR-SEC-002")
+def test_an_existing_row_cannot_move_to_another_school(school_a, school_b):
+    with tenant_context(school_a.id):
+        course = Course.objects.create(title="Algebra")
+
+    course.school = school_b
+    with tenant_context(school_b.id), pytest.raises(CrossTenantWriteError):
+        course.save()
+
+    with system_scope("test: the row stayed put"):
+        assert Course.all_schools.get(pk=course.pk).school_id == school_a.id
+
+
+@pytest.mark.django_db
+@pytest.mark.req("P1-T02")
+def test_saving_without_a_tenant_context_fails_loudly(school_a):
+    with pytest.raises(MissingTenantContextError):
+        Course(school=school_a, title="Algebra").save()

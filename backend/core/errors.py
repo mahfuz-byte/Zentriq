@@ -4,3 +4,7 @@ class MissingTenantContextError(RuntimeError):
 
 class SystemScopeRequiredError(RuntimeError):
     """The unscoped `all_schools` manager was used outside `system_scope`."""
+
+
+class CrossTenantWriteError(RuntimeError):
+    """A write would put a row in, or link it to, a school other than the current one."""
