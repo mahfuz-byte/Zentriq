@@ -64,17 +64,17 @@ def test_every_app_table_grants_the_app_role_data_access_only() -> None:
     # grants migration ran (default privileges).
     with connection.cursor() as cur:
         cur.execute(
-            "SELECT table_name FROM information_schema.tables "
-            "WHERE table_schema = 'public' AND table_type = 'BASE TABLE' "
-            "AND table_name <> 'django_migrations' "
+            "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+            "WHERE n.nspname = 'public' AND c.relkind = 'r' "
+            "AND c.relname <> 'django_migrations' "
             "AND NOT ("
-            "  has_table_privilege(%(role)s, quote_ident(table_name), 'SELECT')"
-            "  AND has_table_privilege(%(role)s, quote_ident(table_name), 'INSERT')"
-            "  AND has_table_privilege(%(role)s, quote_ident(table_name), 'UPDATE')"
-            "  AND has_table_privilege(%(role)s, quote_ident(table_name), 'DELETE')"
-            "  AND NOT has_table_privilege(%(role)s, quote_ident(table_name), 'TRUNCATE')"
-            "  AND NOT has_table_privilege(%(role)s, quote_ident(table_name), 'REFERENCES')"
-            "  AND NOT has_table_privilege(%(role)s, quote_ident(table_name), 'TRIGGER')"
+            "  has_table_privilege(%(role)s, c.oid, 'SELECT')"
+            "  AND has_table_privilege(%(role)s, c.oid, 'INSERT')"
+            "  AND has_table_privilege(%(role)s, c.oid, 'UPDATE')"
+            "  AND has_table_privilege(%(role)s, c.oid, 'DELETE')"
+            "  AND NOT has_table_privilege(%(role)s, c.oid, 'TRUNCATE')"
+            "  AND NOT has_table_privilege(%(role)s, c.oid, 'REFERENCES')"
+            "  AND NOT has_table_privilege(%(role)s, c.oid, 'TRIGGER')"
             ")",
             {"role": APP_ROLE},
         )
