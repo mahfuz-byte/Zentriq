@@ -5,11 +5,15 @@ from django.apps import apps
 from django.core import checks
 from django.db import models
 
-from core.models import is_tenant_model
+from core.models import TenantModel, is_tenant_model
 
 
 def tenant_model_errors(model_classes: Iterable[type[models.Model]]) -> list[checks.CheckMessage]:
     """Tenancy rules the ORM guards can't enforce at runtime.
+
+    A TenantModel must keep the scoped base manager: a `Meta` that doesn't subclass
+    `TenantModel.Meta` drops `base_manager_name`, and forward links then load rows
+    from any school.
 
     A many-to-many between school-owned models needs a `through` model that is
     itself a TenantModel: Django's auto-created link table has no school and skips
@@ -19,6 +23,15 @@ def tenant_model_errors(model_classes: Iterable[type[models.Model]]) -> list[che
     for model in model_classes:
         if not is_tenant_model(model):
             continue
+        if model._meta.base_manager_name != TenantModel._meta.base_manager_name:
+            errors.append(
+                checks.Error(
+                    "A TenantModel's Meta must subclass TenantModel.Meta, "
+                    "or it loses the school-scoped base manager.",
+                    obj=model,
+                    id="core.E002",
+                )
+            )
         for field in model._meta.local_many_to_many:
             if is_tenant_model(field.related_model) and not is_tenant_model(
                 field.remote_field.through
