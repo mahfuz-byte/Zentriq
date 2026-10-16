@@ -72,8 +72,9 @@ def test_a_user_holds_each_role_at_most_once(school_a: School) -> None:
 @pytest.mark.django_db
 @pytest.mark.req("NFR-SEC-005")
 def test_passwords_are_hashed_with_argon2id(school_a: School) -> None:
-    with override_settings(PASSWORD_HASHERS=base_settings.PASSWORD_HASHERS), tenant_context(
-        school_a.id
+    with (
+        override_settings(PASSWORD_HASHERS=base_settings.PASSWORD_HASHERS),
+        tenant_context(school_a.id),
     ):
         user = UserFactory(username="sara", display_name="Sara")
         user.set_password("correct horse battery staple")

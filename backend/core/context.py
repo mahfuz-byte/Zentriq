@@ -1,8 +1,8 @@
+import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, replace
-import logging
 from uuid import UUID
 
 from core.errors import MissingTenantContextError
@@ -26,7 +26,9 @@ class RequestContext:
         return self.system_scope_reason is not None
 
 
-_current: ContextVar[RequestContext] = ContextVar("as_request_context", default=RequestContext())
+# RequestContext is frozen, so sharing one empty default is safe.
+_EMPTY = RequestContext()
+_current: ContextVar[RequestContext] = ContextVar("as_request_context", default=_EMPTY)
 
 
 def ctx() -> RequestContext:

@@ -35,15 +35,19 @@ def test_a_school_has_its_profile_and_a_logo(school_a: Model) -> None:
     # The School model is looked up from the fixture: modules.files may not import
     # accounts.models (BUILD_PLAN §8.2).
     school_model = type(school_a)
-    school_model.objects.filter(pk=school_a.pk).update(
+    school_model._default_manager.filter(pk=school_a.pk).update(
         logo_file=logo, description="A fictional secondary school"
     )
 
-    school = school_model.objects.get(pk=school_a.pk)
-    assert (school.status, school.locale, school.timezone, school.settings) == (
-        "ACTIVE",
-        "en",
-        "UTC",
-        {},
+    school = school_model._default_manager.filter(pk=school_a.pk).values(
+        "status", "locale", "timezone", "settings", "logo_file_id"
     )
-    assert school.logo_file_id == logo.id
+    assert list(school) == [
+        {
+            "status": "ACTIVE",
+            "locale": "en",
+            "timezone": "UTC",
+            "settings": {},
+            "logo_file_id": logo.id,
+        }
+    ]

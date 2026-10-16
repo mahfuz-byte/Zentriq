@@ -78,5 +78,8 @@ def _first_column(declared: models.UniqueConstraint | models.Index) -> str | Non
 
 
 @checks.register(checks.Tags.models)
-def check_tenant_models(app_configs: Any = None, **kwargs: Any) -> list[checks.CheckMessage]:  # reason: Django's check signature
+def check_tenant_models(
+    app_configs: Any = None,  # reason: Django's check signature
+    **kwargs: Any,  # reason: as for app_configs
+) -> list[checks.CheckMessage]:
     return tenant_model_errors(apps.get_models())

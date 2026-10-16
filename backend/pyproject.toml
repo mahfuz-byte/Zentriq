@@ -11,9 +11,13 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "django-stubs[compatible-mypy]>=5.2,<5.3",
     "factory-boy>=3.3",
+    "import-linter>=2.15",
     "pytest>=8.3",
+    "pytest-cov>=7.1.0",
     "pytest-django>=4.9",
+    "ruff>=0.17.1",
 ]
 
 [tool.uv]
@@ -25,3 +29,68 @@ addopts = "--strict-markers -q"
 markers = [
     "req(*ids): requirement or task IDs this test proves (see BUILD_PLAN §9.2)",
 ]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+extend-exclude = ["**/migrations/*.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "TID"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+# §8.4: code reads the time from core.clock, so tests can fix it.
+"django.utils.timezone.now".msg = "Use core.clock.now()"
+"datetime.datetime.now".msg = "Use core.clock.now()"
+"datetime.datetime.utcnow".msg = "Use core.clock.now()"
+"datetime.datetime.today".msg = "Use core.clock.now()"
+"datetime.date.today".msg = "Use core.clock.today()"
+"time.time".msg = "Use core.clock.now()"
+# §8.2: raw SQL bypasses tenant scoping; reviewed files are allow-listed below.
+"django.db.connection.cursor".msg = "Raw SQL bypasses tenant scoping; use the ORM"
+"django.db.connections".msg = "Raw SQL bypasses tenant scoping; use the ORM"
+
+[tool.ruff.lint.per-file-ignores]
+# Django declares Meta options and REQUIRED_FIELDS as class-level lists by design.
+"**/models.py" = ["RUF012"]
+# The clock itself.
+"core/clock.py" = ["TID251"]
+# Reviewed raw SQL: database-role privilege checks.
+"modules/accounts/tests/test_app_role.py" = ["TID251"]
+
+# Module boundaries (BUILD_PLAN §8.2). Contracts for `ai`, `modules.results` and
+# `modules.analysis` get added with those packages. Cross-module imports of another
+# app's models/views/serializers/tasks are checked by core.lint (one rule for every app).
+[tool.importlinter]
+root_packages = ["config", "core", "domain", "modules"]
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "domain is pure Python: no Django, no app code, no I/O"
+type = "forbidden"
+source_modules = ["domain"]
+forbidden_modules = [
+    "django", "rest_framework", "celery", "psycopg", "boto3", "httpx", "anthropic",
+    "core", "modules", "config", "socket", "subprocess",
+    "urllib",  # import-linter can only forbid whole external packages; this covers urllib.request
+]
+
+[[tool.importlinter.contracts]]
+name = "core does not depend on modules"
+type = "forbidden"
+source_modules = ["core"]
+forbidden_modules = ["modules"]
+
+[tool.mypy]
+strict = true
+python_version = "3.13"
+plugins = ["mypy_django_plugin.main"]
+exclude = ['(^|/)\.venv/', '(^|/)migrations/']
+
+[[tool.mypy.overrides]]
+# django-environ ships no type information.
+module = ["environ"]
+ignore_missing_imports = true
+
+[tool.django-stubs]
+django_settings_module = "config.settings.test"

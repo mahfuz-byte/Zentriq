@@ -21,7 +21,9 @@ def row_counts() -> tuple[int, int, int]:
 
 @pytest.mark.django_db
 @pytest.mark.req("P1-T01")
-def test_the_seed_creates_greenfield_with_one_user_per_role(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_the_seed_creates_greenfield_with_one_user_per_role(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("SEED_PASSWORD", SEED_PASSWORD)
 
     call_command("seed")

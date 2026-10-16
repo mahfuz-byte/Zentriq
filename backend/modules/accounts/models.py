@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, ClassVar
 
 from django.contrib.auth.base_user import AbstractBaseUser
 from django.db import models
@@ -63,7 +63,7 @@ class User(AbstractBaseUser, TenantModel):
 
     USERNAME_FIELD = "username"
     EMAIL_FIELD = "email"
-    REQUIRED_FIELDS: list[str] = []
+    REQUIRED_FIELDS: ClassVar[list[str]] = []
 
     class Meta(TenantModel.Meta):
         constraints = [
@@ -100,7 +100,8 @@ class RoleAssignment(TenantModel):
     class Meta(TenantModel.Meta):
         constraints = [
             models.UniqueConstraint(
-                fields=["school", "user", "role"], name="accounts_roleassignment_school_user_role_uniq"
+                fields=["school", "user", "role"],
+                name="accounts_roleassignment_school_user_role_uniq",
             ),
         ]
 
@@ -128,9 +129,7 @@ class Session(BaseModel):
     """
 
     user = models.ForeignKey(User, null=True, blank=True, on_delete=models.CASCADE)
-    operator = models.ForeignKey(
-        OperatorAccount, null=True, blank=True, on_delete=models.CASCADE
-    )
+    operator = models.ForeignKey(OperatorAccount, null=True, blank=True, on_delete=models.CASCADE)
     token_hash = models.CharField(max_length=64, unique=True)
     # The role a user session acts as; empty for an operator session.
     active_role = models.CharField(max_length=20, choices=Role.choices, blank=True)

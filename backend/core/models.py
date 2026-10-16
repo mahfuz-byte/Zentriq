@@ -1,7 +1,7 @@
 import functools
 import uuid
-from collections.abc import Sequence
-from typing import Any, Self, TypeGuard
+from collections.abc import Collection, Sequence
+from typing import Any, Self, TypeGuard, cast
 
 from django.apps import apps
 from django.db import models
@@ -43,8 +43,8 @@ class TenantModel(BaseModel):
     def from_db(
         cls,
         db: str | None,
-        field_names: Sequence[str],
-        values: Sequence[Any],  # reason: raw column values of any type, as in Django
+        field_names: Collection[str],
+        values: Collection[Any],  # reason: raw column values of any type, as in Django
     ) -> Self:
         instance = super().from_db(db, field_names, values)
         instance._mark_persisted()
@@ -136,7 +136,8 @@ class TenantModel(BaseModel):
         # is in another school (or missing). One query per foreign key.
         for field, ids in links.items():
             lookup = {f"{field.target_field.attname}__in": ids}
-            if ids and field.related_model.objects.filter(**lookup).count() != len(ids):
+            target = cast("type[TenantModel]", field.related_model)  # links are to TenantModels
+            if ids and target.objects.filter(**lookup).count() != len(ids):
                 raise CrossTenantWriteError(
                     f"{cls.__name__}.{field.name} points at a row outside the current school"
                 )
@@ -159,7 +160,9 @@ def is_tenant_model(model: object) -> TypeGuard[type[TenantModel]]:
     return isinstance(model, type) and issubclass(model, TenantModel)
 
 
-def _links_to_tenant_rows(field: Any) -> TypeGuard["models.ForeignKey[Any, Any]"]:  # reason: any model field
+def _links_to_tenant_rows(
+    field: Any,  # reason: any model field
+) -> TypeGuard["models.ForeignKey[Any, Any]"]:
     # ForeignKey includes OneToOneField.
     return isinstance(field, models.ForeignKey) and is_tenant_model(
         getattr(field, "related_model", None)
