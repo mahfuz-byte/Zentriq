@@ -94,3 +94,12 @@ ignore_missing_imports = true
 
 [tool.django-stubs]
 django_settings_module = "config.settings.test"
+
+[tool.coverage.run]
+branch = true
+source = ["config", "core", "domain", "modules", "scripts"]
+omit = ["*/migrations/*", "*/tests/*"]
+
+[tool.coverage.report]
+skip_empty = true
+show_missing = true

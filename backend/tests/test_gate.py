@@ -201,3 +201,43 @@ def test_the_backend_passes_the_typecheck() -> None:
     result = typecheck()
 
     assert result.returncode == 0, result.stdout
+
+
+@contextmanager
+def appended(relative_path: str, source: str) -> Iterator[None]:
+    """Append `source` to a real file for one check, and always restore it."""
+    path = BACKEND / relative_path
+    original = path.read_bytes()
+    path.write_bytes(original + source.encode())
+    try:
+        yield
+    finally:
+        path.write_bytes(original)
+
+
+@pytest.mark.req("P0-T05")
+def test_a_model_change_without_a_migration_fails_the_gate() -> None:
+    probe = "\n\nclass GateProbe(TenantModel):\n    pass\n"
+    with appended("core/tests/tenancy_app/models.py", probe):
+        result = run("scripts.verify", "--only", "migrations")
+
+    assert result.returncode != 0
+    assert "GateProbe" in result.stdout + result.stderr
+
+
+@pytest.mark.req("P0-T05")
+def test_verify_stops_at_the_first_failing_step() -> None:
+    with planted("core/gate_probe.py", "import os\n"):  # unused import: a lint failure
+        result = run("scripts.verify", "--static")
+
+    assert result.returncode != 0
+    assert "FAILED: lint" in result.stdout
+    assert "typecheck" not in result.stdout
+
+
+@pytest.mark.req("P0-T05")
+def test_the_backend_passes_the_static_gate() -> None:
+    result = run("scripts.verify", "--static")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "All checks passed" in result.stdout
