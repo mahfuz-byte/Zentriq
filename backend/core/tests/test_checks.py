@@ -1,4 +1,5 @@
 import pytest
+from django.apps import apps
 from django.db import models
 from django.test.utils import isolate_apps
 
@@ -26,6 +27,5 @@ def test_a_plain_many_to_many_between_tenant_models_is_an_error() -> None:
 
 @pytest.mark.req("C-01")
 def test_the_registered_models_pass_the_tenancy_checks() -> None:
-    from django.apps import apps
 
     assert tenant_model_errors(apps.get_models()) == []
