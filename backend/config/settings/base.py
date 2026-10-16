@@ -16,6 +16,8 @@ INSTALLED_APPS = [
     "django.contrib.auth",
     "core",
     "modules.accounts",
+    "modules.audit",
+    "modules.files",
 ]
 
 MIDDLEWARE: list[str] = []

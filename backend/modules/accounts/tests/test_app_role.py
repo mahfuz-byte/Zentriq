@@ -27,17 +27,18 @@ def app_role(db: None) -> Iterator[psycopg.Connection]:
 @pytest.mark.django_db
 @pytest.mark.req("P1-T01")
 def test_the_app_role_can_read_and_write_rows(app_role: psycopg.Connection) -> None:
+    # django_content_type: an ordinary table whose columns don't change as models grow.
     with app_role.cursor() as cur:
         cur.execute(
-            "INSERT INTO accounts_school (id, created_at, updated_at, slug, name) "
-            "VALUES (gen_random_uuid(), now(), now(), 'role-check', 'Role Check') RETURNING id"
+            "INSERT INTO django_content_type (app_label, model) "
+            "VALUES ('role_check', 'probe') RETURNING id"
         )
         row = cur.fetchone()
         assert row is not None
-        cur.execute("UPDATE accounts_school SET name = 'Renamed' WHERE id = %s", (row[0],))
-        cur.execute("SELECT name FROM accounts_school WHERE id = %s", (row[0],))
-        assert cur.fetchone() == ("Renamed",)
-        cur.execute("DELETE FROM accounts_school WHERE id = %s", (row[0],))
+        cur.execute("UPDATE django_content_type SET model = 'renamed' WHERE id = %s", (row[0],))
+        cur.execute("SELECT model FROM django_content_type WHERE id = %s", (row[0],))
+        assert cur.fetchone() == ("renamed",)
+        cur.execute("DELETE FROM django_content_type WHERE id = %s", (row[0],))
         assert cur.rowcount == 1
 
 

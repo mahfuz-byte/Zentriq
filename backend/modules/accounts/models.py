@@ -10,8 +10,21 @@ from core.models import BaseModel, TenantModel
 class School(BaseModel):
     """The tenant root. Not a TenantModel: it has no school of its own."""
 
+    class Status(models.TextChoices):
+        ACTIVE = "ACTIVE"
+        SUSPENDED = "SUSPENDED"
+
     slug = models.SlugField(unique=True)
     name = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    logo_file = models.ForeignKey(
+        "files.FileObject", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    locale = models.CharField(max_length=20, default="en")
+    timezone = models.CharField(max_length=64, default="UTC")
+    # Validated by a pydantic model when school settings arrive (P2).
+    settings = models.JSONField(default=dict, blank=True)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE)
 
 
 class User(AbstractBaseUser, TenantModel):
