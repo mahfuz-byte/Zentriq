@@ -2,6 +2,7 @@ import uuid
 from collections.abc import Sequence
 from typing import Any, Self, TypeGuard
 
+from django.apps import apps
 from django.db import models
 
 from core.context import require_school_id
@@ -138,6 +139,13 @@ class TenantModel(BaseModel):
                 raise CrossTenantWriteError(
                     f"{cls.__name__}.{field.name} points at a row outside the current school"
                 )
+
+
+def tenant_models() -> list[type[TenantModel]]:
+    """TENANT_MODELS: every installed, concrete TenantModel (DR-002). RLS (P7-T02) and
+    the cross-tenant suite are generated from it. Call once the app registry is ready.
+    """
+    return [model for model in apps.get_models() if is_tenant_model(model)]
 
 
 def is_tenant_model(model: object) -> TypeGuard[type[TenantModel]]:
