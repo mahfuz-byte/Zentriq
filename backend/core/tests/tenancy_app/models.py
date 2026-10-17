@@ -6,7 +6,9 @@ from core.models import TenantModel
 class Course(TenantModel):
     title = models.CharField(max_length=100)
     prerequisite = models.ForeignKey("self", null=True, on_delete=models.SET_NULL)
-    tags = models.ManyToManyField("Tag", through="CourseTag", related_name="courses")
+    tags: "models.ManyToManyField[Tag, CourseTag]" = models.ManyToManyField(
+        "Tag", through="CourseTag", related_name="courses"
+    )
 
 
 class Lesson(TenantModel):

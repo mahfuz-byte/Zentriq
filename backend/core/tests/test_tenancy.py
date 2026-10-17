@@ -17,7 +17,7 @@ from core.tests.tenancy_app.models import Course, CourseTag, Lesson, Syllabus, T
 @pytest.mark.req("NFR-SEC-003")
 def test_another_schools_row_is_invisible_by_primary_key(school_a: Model, school_b: Model) -> None:
     with tenant_context(school_b.pk):
-        other = Course.objects.create(school=school_b, title="Riverside Algebra")
+        other = Course.objects.create(school_id=school_b.pk, title="Riverside Algebra")
 
     with tenant_context(school_a.pk):
         assert Course.objects.filter(pk=other.pk).first() is None
@@ -29,10 +29,10 @@ def test_another_schools_row_is_invisible_by_primary_key(school_a: Model, school
 @pytest.mark.req("NFR-SEC-003")
 def test_counts_and_iteration_see_only_the_current_school(school_a: Model, school_b: Model) -> None:
     with tenant_context(school_a.pk):
-        Course.objects.create(school=school_a, title="Greenfield Algebra")
+        Course.objects.create(school_id=school_a.pk, title="Greenfield Algebra")
     with tenant_context(school_b.pk):
-        Course.objects.create(school=school_b, title="Riverside Algebra")
-        Course.objects.create(school=school_b, title="Riverside Geometry")
+        Course.objects.create(school_id=school_b.pk, title="Riverside Algebra")
+        Course.objects.create(school_id=school_b.pk, title="Riverside Geometry")
 
     with tenant_context(school_a.pk):
         assert Course.objects.count() == 1
@@ -58,11 +58,13 @@ def test_all_schools_is_refused_outside_a_system_scope(school_a: Model) -> None:
 
 @pytest.mark.django_db
 @pytest.mark.req("P1-T02")
-def test_all_schools_sees_every_school_inside_a_system_scope(school_a: Model, school_b: Model) -> None:
+def test_all_schools_sees_every_school_inside_a_system_scope(
+    school_a: Model, school_b: Model
+) -> None:
     with tenant_context(school_a.pk):
-        Course.objects.create(school=school_a, title="Greenfield Algebra")
+        Course.objects.create(school_id=school_a.pk, title="Greenfield Algebra")
     with tenant_context(school_b.pk):
-        Course.objects.create(school=school_b, title="Riverside Algebra")
+        Course.objects.create(school_id=school_b.pk, title="Riverside Algebra")
 
     with system_scope("test: count courses in every school"):
         assert sorted(c.title for c in Course.all_schools.all()) == [
@@ -83,38 +85,40 @@ def test_entering_a_system_scope_logs_the_reason(caplog: pytest.LogCaptureFixtur
     with caplog.at_level(logging.INFO, logger="as.tenancy"), system_scope("nightly retention"):
         pass
     [record] = caplog.records
-    assert record.reason == "nightly retention"
+    assert record.__dict__["reason"] == "nightly retention"
 
 
 @pytest.mark.django_db
 @pytest.mark.req("NFR-SEC-003")
-def test_update_in_one_school_leaves_other_schools_untouched(school_a: Model, school_b: Model) -> None:
+def test_update_in_one_school_leaves_other_schools_untouched(
+    school_a: Model, school_b: Model
+) -> None:
     with tenant_context(school_a.pk):
-        Course.objects.create(school=school_a, title="Algebra")
+        Course.objects.create(school_id=school_a.pk, title="Algebra")
     with tenant_context(school_b.pk):
-        Course.objects.create(school=school_b, title="Algebra")
+        Course.objects.create(school_id=school_b.pk, title="Algebra")
 
     with tenant_context(school_a.pk):
         assert Course.objects.update(title="Renamed") == 1
 
     with system_scope("test: check school B"):
-        assert Course.all_schools.get(school=school_b).title == "Algebra"
+        assert Course.all_schools.get(school_id=school_b.pk).title == "Algebra"
 
 
 @pytest.mark.django_db
 @pytest.mark.req("NFR-SEC-003")
 def test_delete_in_one_school_leaves_other_schools_rows(school_a: Model, school_b: Model) -> None:
     with tenant_context(school_a.pk):
-        Course.objects.create(school=school_a, title="Algebra")
+        Course.objects.create(school_id=school_a.pk, title="Algebra")
     with tenant_context(school_b.pk):
-        Course.objects.create(school=school_b, title="Algebra")
+        Course.objects.create(school_id=school_b.pk, title="Algebra")
 
     with tenant_context(school_a.pk):
         Course.objects.all().delete()
 
     with system_scope("test: check school B"):
-        assert Course.all_schools.filter(school=school_b).count() == 1
-        assert not Course.all_schools.filter(school=school_a).exists()
+        assert Course.all_schools.filter(school_id=school_b.pk).count() == 1
+        assert not Course.all_schools.filter(school_id=school_a.pk).exists()
 
 
 @pytest.mark.django_db
@@ -128,8 +132,11 @@ def test_a_new_row_takes_its_school_from_the_context(school_a: Model) -> None:
 @pytest.mark.django_db
 @pytest.mark.req("NFR-SEC-002")
 def test_a_school_supplied_as_input_is_never_honoured(school_a: Model, school_b: Model) -> None:
-    with tenant_context(school_a.pk), pytest.raises(CrossTenantWriteError):
-        Course.objects.create(school=school_b, title="Smuggled")
+    with tenant_context(school_a.pk):
+        with pytest.raises(CrossTenantWriteError):
+            Course.objects.create(school=school_b, title="Smuggled")  # type: ignore[misc]  # reason: core can't import School
+        with pytest.raises(CrossTenantWriteError):
+            Course.objects.create(school_id=school_b.pk, title="Smuggled")
 
     with system_scope("test: nothing was written"):
         assert not Course.all_schools.exists()
@@ -141,7 +148,13 @@ def test_an_existing_row_cannot_move_to_another_school(school_a: Model, school_b
     with tenant_context(school_a.pk):
         course = Course.objects.create(title="Algebra")
 
-    course.school = school_b
+    course.school = school_b  # type: ignore[assignment]  # reason: core can't import School
+    with tenant_context(school_b.pk), pytest.raises(CrossTenantWriteError):
+        course.save()
+
+    with tenant_context(school_a.pk):
+        course = Course.objects.get(pk=course.pk)
+    course.school_id = school_b.pk
     with tenant_context(school_b.pk), pytest.raises(CrossTenantWriteError):
         course.save()
 
@@ -153,7 +166,7 @@ def test_an_existing_row_cannot_move_to_another_school(school_a: Model, school_b
 @pytest.mark.req("P1-T02")
 def test_saving_without_a_tenant_context_fails_loudly(school_a: Model) -> None:
     with pytest.raises(MissingTenantContextError):
-        Course(school=school_a, title="Algebra").save()
+        Course(school_id=school_a.pk, title="Algebra").save()
 
 
 @pytest.mark.django_db
@@ -180,8 +193,8 @@ def test_bulk_create_cannot_link_to_another_schools_row(school_a: Model, school_
     with tenant_context(school_a.pk), pytest.raises(CrossTenantWriteError):
         Lesson.objects.bulk_create(
             [
-                Lesson(school=school_a, course=greenfield_course, title="Fine"),
-                Lesson(school=school_a, course=riverside_course, title="Smuggled"),
+                Lesson(school_id=school_a.pk, course=greenfield_course, title="Fine"),
+                Lesson(school_id=school_a.pk, course=riverside_course, title="Smuggled"),
             ]
         )
 
@@ -191,7 +204,9 @@ def test_bulk_create_cannot_link_to_another_schools_row(school_a: Model, school_
 
 @pytest.mark.django_db
 @pytest.mark.req("C-01")
-def test_bulk_update_cannot_repoint_rows_at_another_schools_row(school_a: Model, school_b: Model) -> None:
+def test_bulk_update_cannot_repoint_rows_at_another_schools_row(
+    school_a: Model, school_b: Model
+) -> None:
     with tenant_context(school_b.pk):
         riverside_course = Course.objects.create(title="Riverside Algebra")
     with tenant_context(school_a.pk):
@@ -210,7 +225,9 @@ def test_bulk_create_takes_the_school_from_the_context(school_a: Model, school_b
     with tenant_context(school_a.pk):
         Course.objects.bulk_create([Course(title="Algebra"), Course(title="Geometry")])
         with pytest.raises(CrossTenantWriteError):
-            Course.objects.bulk_create([Course(school=school_b, title="Smuggled")])
+            Course.objects.bulk_create([Course(school=school_b, title="Smuggled")])  # type: ignore[misc]  # reason: core can't import School
+        with pytest.raises(CrossTenantWriteError):
+            Course.objects.bulk_create([Course(school_id=school_b.pk, title="Smuggled")])
 
     with system_scope("test: where the rows went"):
         assert sorted(Course.all_schools.values_list("title", "school_id")) == [
@@ -245,7 +262,9 @@ def _corrupt_link(lesson: Lesson, course: Course) -> None:
 
 @pytest.mark.django_db
 @pytest.mark.req("NFR-SEC-003")
-def test_following_a_link_never_returns_another_schools_row(school_a: Model, school_b: Model) -> None:
+def test_following_a_link_never_returns_another_schools_row(
+    school_a: Model, school_b: Model
+) -> None:
     with tenant_context(school_b.pk):
         riverside_course = Course.objects.create(title="Riverside Algebra")
     with tenant_context(school_a.pk):
@@ -260,7 +279,9 @@ def test_following_a_link_never_returns_another_schools_row(school_a: Model, sch
 
 @pytest.mark.django_db
 @pytest.mark.req("NFR-SEC-003")
-def test_reverse_relations_never_include_another_schools_rows(school_a: Model, school_b: Model) -> None:
+def test_reverse_relations_never_include_another_schools_rows(
+    school_a: Model, school_b: Model
+) -> None:
     with tenant_context(school_a.pk):
         algebra = Course.objects.create(title="Algebra")
         Lesson.objects.create(course=algebra, title="Greenfield lesson")
@@ -299,7 +320,7 @@ def test_update_cannot_move_rows_to_another_school(school_a: Model, school_b: Mo
             Course.objects.update(school=school_b)
 
     with system_scope("test: the row stayed put"):
-        assert not Course.all_schools.filter(school=school_b).exists()
+        assert not Course.all_schools.filter(school_id=school_b.pk).exists()
 
 
 @pytest.mark.django_db
@@ -360,7 +381,9 @@ def test_a_many_to_many_link_cannot_cross_schools(school_a: Model, school_b: Mod
 
 @pytest.mark.django_db
 @pytest.mark.req("P1-T02")
-def test_a_system_job_can_delete_and_follow_links_across_schools(school_a: Model, school_b: Model) -> None:
+def test_a_system_job_can_delete_and_follow_links_across_schools(
+    school_a: Model, school_b: Model
+) -> None:
     with tenant_context(school_a.pk):
         Lesson.objects.create(course=Course.objects.create(title="Algebra"), title="A1")
     with tenant_context(school_b.pk):
@@ -400,7 +423,9 @@ def test_bulk_create_allows_links_within_the_same_batch(school_a: Model) -> None
 
 @pytest.mark.django_db
 @pytest.mark.req("C-01")
-def test_a_self_link_to_another_schools_row_is_still_refused(school_a: Model, school_b: Model) -> None:
+def test_a_self_link_to_another_schools_row_is_still_refused(
+    school_a: Model, school_b: Model
+) -> None:
     with tenant_context(school_b.pk):
         riverside_course = Course.objects.create(title="Riverside Algebra")
 

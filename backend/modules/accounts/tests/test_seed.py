@@ -21,7 +21,9 @@ def row_counts() -> tuple[int, int, int]:
 
 @pytest.mark.django_db
 @pytest.mark.req("P1-T01")
-def test_the_seed_creates_greenfield_with_one_user_per_role(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_the_seed_creates_greenfield_with_one_user_per_role(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("SEED_PASSWORD", SEED_PASSWORD)
 
     call_command("seed")
@@ -72,7 +74,7 @@ def test_the_seed_reuses_a_user_whose_name_differs_only_in_case(
     monkeypatch.setenv("SEED_PASSWORD", SEED_PASSWORD)
     school = School.objects.create(slug="greenfield", name="Greenfield School")
     with tenant_context(school.id):
-        UserFactory(username="Admin", display_name="Head")
+        UserFactory.create(username="Admin", display_name="Head")
 
     call_command("seed")
 

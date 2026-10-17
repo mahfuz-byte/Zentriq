@@ -1,4 +1,4 @@
-from collections.abc import Iterable, Sequence
+from collections.abc import Collection, Iterable
 from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any, TypeVar
 
@@ -24,8 +24,8 @@ class TenantQuerySet(models.QuerySet[_Row]):
         batch_size: int | None = None,
         ignore_conflicts: bool = False,
         update_conflicts: bool = False,
-        update_fields: Sequence[str] | None = None,
-        unique_fields: Sequence[str] | None = None,
+        update_fields: Collection[str] | None = None,
+        unique_fields: Collection[str] | None = None,
     ) -> list[_Row]:
         if update_conflicts:
             # An upsert overwrites whatever row holds the key, in any school.
@@ -50,9 +50,8 @@ class TenantQuerySet(models.QuerySet[_Row]):
     def bulk_update(
         self,
         objs: Iterable[_Row],
-        fields: Sequence[str],
-        *args: Any,  # reason: passed through to Django's bulk_update unchanged
-        **kwargs: Any,  # reason: as for *args
+        fields: Iterable[str],
+        batch_size: int | None = None,
     ) -> int:
         rows = list(objs)
         self.model.guard_writes(rows)
@@ -60,7 +59,7 @@ class TenantQuerySet(models.QuerySet[_Row]):
         # rows were checked above, so that inner update() skips its own guard.
         token = _rows_already_guarded.set(True)
         try:
-            return super().bulk_update(rows, fields, *args, **kwargs)
+            return super().bulk_update(rows, fields, batch_size=batch_size)
         finally:
             _rows_already_guarded.reset(token)
 

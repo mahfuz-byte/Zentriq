@@ -5,7 +5,7 @@ import factory
 from modules.files.models import FileObject
 
 
-class FileObjectFactory(factory.django.DjangoModelFactory):
+class FileObjectFactory(factory.django.DjangoModelFactory[FileObject]):
     class Meta:
         model = FileObject
 

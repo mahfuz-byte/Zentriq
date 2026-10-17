@@ -29,7 +29,7 @@ def _unique_token_hash(n: int) -> str:
     return token_hash(f"factory-token-{n}")
 
 
-class UserFactory(factory.django.DjangoModelFactory):
+class UserFactory(factory.django.DjangoModelFactory[User]):
     class Meta:
         model = User
 
@@ -37,7 +37,7 @@ class UserFactory(factory.django.DjangoModelFactory):
     display_name = factory.Sequence(lambda n: f"User {n}")
 
 
-class RoleAssignmentFactory(factory.django.DjangoModelFactory):
+class RoleAssignmentFactory(factory.django.DjangoModelFactory[RoleAssignment]):
     class Meta:
         model = RoleAssignment
 
@@ -45,14 +45,14 @@ class RoleAssignmentFactory(factory.django.DjangoModelFactory):
     role = Role.TEACHER
 
 
-class OperatorAccountFactory(factory.django.DjangoModelFactory):
+class OperatorAccountFactory(factory.django.DjangoModelFactory[OperatorAccount]):
     class Meta:
         model = OperatorAccount
 
     email = factory.Sequence(lambda n: f"ops-{n}@as.test")
 
 
-class SessionFactory(factory.django.DjangoModelFactory):
+class SessionFactory(factory.django.DjangoModelFactory[Session]):
     """Pass `user=` or `operator=`: a session belongs to exactly one."""
 
     class Meta:
@@ -66,7 +66,7 @@ class SessionFactory(factory.django.DjangoModelFactory):
     absolute_expires_at = LATER + timedelta(hours=12)
 
 
-class InvitationFactory(factory.django.DjangoModelFactory):
+class InvitationFactory(factory.django.DjangoModelFactory[Invitation]):
     class Meta:
         model = Invitation
 
@@ -75,7 +75,7 @@ class InvitationFactory(factory.django.DjangoModelFactory):
     expires_at = LATER
 
 
-class PasswordResetTokenFactory(factory.django.DjangoModelFactory):
+class PasswordResetTokenFactory(factory.django.DjangoModelFactory[PasswordResetToken]):
     class Meta:
         model = PasswordResetToken
 

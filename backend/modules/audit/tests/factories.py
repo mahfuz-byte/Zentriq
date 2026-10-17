@@ -8,7 +8,7 @@ from modules.accounts.roles import Role
 from modules.audit.models import AuditEvent
 
 
-class AuditEventFactory(factory.django.DjangoModelFactory):
+class AuditEventFactory(factory.django.DjangoModelFactory[AuditEvent]):
     class Meta:
         model = AuditEvent
 
