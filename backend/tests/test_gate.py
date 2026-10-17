@@ -77,6 +77,20 @@ def test_a_raw_cursor_is_allowed_in_a_reviewed_file() -> None:
 
 
 @pytest.mark.req("P0-T05")
+def test_the_connection_itself_stays_usable() -> None:
+    source = (
+        "from django.db import connection\n"
+        "from django.test.utils import CaptureQueriesContext\n"
+        "\n"
+        "with CaptureQueriesContext(connection):\n"
+        "    print(connection.vendor)\n"
+    )
+    result = ruff_check("modules/accounts/tests/test_queries.py", source)
+
+    assert result.returncode == 0, result.stdout
+
+
+@pytest.mark.req("P0-T05")
 def test_the_backend_passes_lint_and_format() -> None:
     lint = run("ruff", "check", ".")
     fmt = run("ruff", "format", "--check", ".")
@@ -183,16 +197,33 @@ def test_a_forbidden_call_site_fails_the_code_rules(
 
 
 @pytest.mark.req("C-01")
+def test_a_package_init_cannot_import_another_modules_models() -> None:
+    with appended("modules/files/__init__.py", "from modules.accounts.models import User\n"):
+        result = code_rules()
+
+    assert re.search(r"modules/files/__init__\.py:\d+: AS003 ", result.stdout), result.stdout
+
+
+@pytest.mark.req("C-01")
 def test_all_schools_inside_a_system_scope_and_justified_escape_hatches_pass() -> None:
     source = (
+        "import enum\n"
         "from typing import Any\n"
+        "from typing import Any as A  # reason: a probe\n"
         "\n"
+        "import core.context\n"
+        "from core import context\n"
         "from core.context import system_scope\n"
         "from modules.accounts.models import User\n"
         "\n"
         "with system_scope('retention'):\n"
         "    User.all_schools.count()\n"
+        "with core.context.system_scope('retention'):\n"
+        "    User.all_schools.count()\n"
+        "with context.system_scope('retention'):\n"
+        "    User.all_schools.count()\n"
         "x: Any = 1  # reason: a probe\n"
+        "y = enum.Any\n"
         "from .models import User as Same\n"
     )
     with planted("modules/accounts/gate_probe.py", source):

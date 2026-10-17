@@ -47,7 +47,7 @@ class Violation:
         return f"{self.path}:{self.line}: {self.code} {self.message}"
 
 
-def module_name(relative_path: str) -> list[str]:
+def _module_parts(relative_path: str) -> list[str]:
     """`modules/files/x.py` gives modules.files.x; a package's `__init__` is the package."""
     parts = relative_path.removesuffix(".py").split("/")
     return parts[:-1] if parts[-1] == "__init__" else parts
@@ -59,12 +59,14 @@ class _RuleChecker(ast.NodeVisitor):
         self.comments = comments
         self.violations: list[Violation] = []
         self._system_scopes = 0
-        module = module_name(path)
+        module = _module_parts(path)
         self._package = module if path.endswith("__init__.py") else module[:-1]
-        self._app = module[1] if len(module) > 2 and module[0] == "modules" else None
-        # Local names bound to core.context.system_scope, and to the core.context module.
+        self._app = module[1] if len(module) >= 2 and module[0] == "modules" else None
+        # Local (dotted) names bound to core.context.system_scope, to the core.context
+        # module and to the typing modules.
         self._scope_names: set[str] = set()
         self._context_modules: set[str] = set()
+        self._typing_modules: set[str] = set()
 
     def _add(self, node: ast.expr | ast.stmt, code: str, message: str) -> None:
         if self.path not in ALLOWED.get(code, set()):
@@ -82,8 +84,7 @@ class _RuleChecker(ast.NodeVisitor):
         return (
             isinstance(func, ast.Attribute)
             and func.attr == "system_scope"
-            and isinstance(func.value, ast.Name)
-            and func.value.id in self._context_modules
+            and _dotted(func.value) in self._context_modules
         )
 
     def visit_With(self, node: ast.With) -> None:
@@ -101,7 +102,7 @@ class _RuleChecker(ast.NodeVisitor):
     def visit_Attribute(self, node: ast.Attribute) -> None:
         if node.attr == "all_schools":
             self._check_all_schools(node)
-        if node.attr == "Any":
+        if node.attr == "Any" and _dotted(node.value) in self._typing_modules:
             self._check_any(node)
         self.generic_visit(node)
 
@@ -113,13 +114,7 @@ class _RuleChecker(ast.NodeVisitor):
         func = node.func
         if isinstance(func, ast.Attribute) and func.attr in {"raw", "extra"}:
             self._add(node, "AS002", f".{func.attr}() is raw SQL; use the ORM")
-        if (
-            isinstance(func, ast.Name)
-            and func.id == "getattr"
-            and len(node.args) >= 2
-            and isinstance(node.args[1], ast.Constant)
-            and node.args[1].value == "all_schools"
-        ):
+        if _is_getattr_of(node, "all_schools"):
             self._check_all_schools(node)
         self.generic_visit(node)
 
@@ -128,8 +123,11 @@ class _RuleChecker(ast.NodeVisitor):
     def visit_Import(self, node: ast.Import) -> None:
         for alias in node.names:
             self._check_import(node, alias.name)
-            if alias.name == "core.context" and alias.asname:
-                self._context_modules.add(alias.asname)
+            bound = alias.asname or alias.name
+            if alias.name == "core.context":
+                self._context_modules.add(bound)
+            if alias.name in TYPING_MODULES:
+                self._typing_modules.add(bound)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         module = self._absolute(node)
@@ -142,7 +140,7 @@ class _RuleChecker(ast.NodeVisitor):
             if module == "core" and alias.name == "context":
                 self._context_modules.add(bound)
             if module in TYPING_MODULES and alias.name == "Any" and bound != "Any":
-                self._add(node, "AS004", "import Any under its own name")
+                self._check_any(node, "an alias of Any")
 
     def _absolute(self, node: ast.ImportFrom) -> str:
         if not node.level:
@@ -168,9 +166,29 @@ class _RuleChecker(ast.NodeVisitor):
 
     # AS004
 
-    def _check_any(self, node: ast.expr) -> None:
+    def _check_any(self, node: ast.expr | ast.stmt, what: str = "Any") -> None:
         if "reason:" not in self.comments.get(node.lineno, ""):
-            self._add(node, "AS004", "Any needs a `# reason:` comment on the same line")
+            self._add(node, "AS004", f"{what} needs a `# reason:` comment on the same line")
+
+
+def _dotted(node: ast.expr) -> str | None:
+    """`a.b.c` as a string, or None for anything but a chain of names."""
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        base = _dotted(node.value)
+        return None if base is None else f"{base}.{node.attr}"
+    return None
+
+
+def _is_getattr_of(call: ast.Call, attribute: str) -> bool:
+    return (
+        isinstance(call.func, ast.Name)
+        and call.func.id == "getattr"
+        and len(call.args) >= 2
+        and isinstance(call.args[1], ast.Constant)
+        and call.args[1].value == attribute
+    )
 
 
 def check_file(path: Path) -> list[Violation]:

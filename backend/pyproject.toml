@@ -49,10 +49,11 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "TID"]
 "time.time_ns".msg = "Use core.clock.now()"
 "django.utils.timezone.localtime".msg = "Use core.clock.now().astimezone(...)"
 "django.utils.timezone.localdate".msg = "Use core.clock.today()"
-# §8.2: raw SQL bypasses tenant scoping; reviewed files are allow-listed below. The
-# whole connection objects are banned, since any attribute path leads to a cursor.
+# §8.2: raw SQL bypasses tenant scoping; reviewed files are allow-listed below. Every
+# route to a cursor is banned; `connection` itself stays usable (vendor, query capture).
 # `.raw()` and `.extra()` are methods, which Ruff can't ban: core.lint AS002 does.
-"django.db.connection".msg = "Raw SQL bypasses tenant scoping; use the ORM"
+"django.db.connection.cursor".msg = "Raw SQL bypasses tenant scoping; use the ORM"
+"django.db.connection.connection".msg = "Raw SQL bypasses tenant scoping; use the ORM"
 "django.db.connections".msg = "Raw SQL bypasses tenant scoping; use the ORM"
 "django.db.transaction.get_connection".msg = "Raw SQL bypasses tenant scoping; use the ORM"
 "django.db.models.RawSQL".msg = "Raw SQL bypasses tenant scoping; use the ORM"

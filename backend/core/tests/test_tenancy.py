@@ -134,7 +134,7 @@ def test_a_new_row_takes_its_school_from_the_context(school_a: Model) -> None:
 def test_a_school_supplied_as_input_is_never_honoured(school_a: Model, school_b: Model) -> None:
     with tenant_context(school_a.pk):
         with pytest.raises(CrossTenantWriteError):
-            Course.objects.create(school=school_b, title="Smuggled")  # type: ignore[misc]  # reason: fixture typed Model
+            Course.objects.create(school=school_b, title="Smuggled")  # type: ignore[misc]  # reason: core can't import School
         with pytest.raises(CrossTenantWriteError):
             Course.objects.create(school_id=school_b.pk, title="Smuggled")
 
@@ -148,7 +148,13 @@ def test_an_existing_row_cannot_move_to_another_school(school_a: Model, school_b
     with tenant_context(school_a.pk):
         course = Course.objects.create(title="Algebra")
 
-    course.school = school_b  # type: ignore[assignment]  # reason: fixture typed Model
+    course.school = school_b  # type: ignore[assignment]  # reason: core can't import School
+    with tenant_context(school_b.pk), pytest.raises(CrossTenantWriteError):
+        course.save()
+
+    with tenant_context(school_a.pk):
+        course = Course.objects.get(pk=course.pk)
+    course.school_id = school_b.pk
     with tenant_context(school_b.pk), pytest.raises(CrossTenantWriteError):
         course.save()
 
@@ -219,7 +225,7 @@ def test_bulk_create_takes_the_school_from_the_context(school_a: Model, school_b
     with tenant_context(school_a.pk):
         Course.objects.bulk_create([Course(title="Algebra"), Course(title="Geometry")])
         with pytest.raises(CrossTenantWriteError):
-            Course.objects.bulk_create([Course(school=school_b, title="Smuggled")])  # type: ignore[misc]  # reason: fixture typed Model
+            Course.objects.bulk_create([Course(school=school_b, title="Smuggled")])  # type: ignore[misc]  # reason: core can't import School
         with pytest.raises(CrossTenantWriteError):
             Course.objects.bulk_create([Course(school_id=school_b.pk, title="Smuggled")])
 
