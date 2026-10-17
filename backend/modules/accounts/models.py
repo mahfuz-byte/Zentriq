@@ -59,7 +59,7 @@ class User(AbstractBaseUser, TenantModel):
     failed_logins = models.PositiveIntegerField(default=0)
     locked_until = models.DateTimeField(null=True, blank=True)
 
-    objects = UserManager()
+    objects: ClassVar[UserManager] = UserManager()
 
     USERNAME_FIELD = "username"
     EMAIL_FIELD = "email"

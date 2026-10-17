@@ -11,18 +11,18 @@ from modules.files.tests.factories import FileObjectFactory
 @pytest.mark.req("P1-T01", "DR-005")
 def test_storage_keys_are_unique_and_files_start_unscanned(school_a: Model) -> None:
     with tenant_context(school_a.pk):
-        logo = FileObjectFactory(storage_key="k-1")
+        logo = FileObjectFactory.create(storage_key="k-1")
         assert FileObject.objects.get(pk=logo.pk).scan_status == FileObject.ScanStatus.PENDING
 
         with pytest.raises(IntegrityError), transaction.atomic():
-            FileObjectFactory(storage_key="k-1")
+            FileObjectFactory.create(storage_key="k-1")
 
 
 @pytest.mark.django_db
 @pytest.mark.req("NFR-SEC-003")
 def test_files_are_scoped_to_the_current_school(school_a: Model, school_b: Model) -> None:
     with tenant_context(school_b.pk):
-        FileObjectFactory()
+        FileObjectFactory.create()
     with tenant_context(school_a.pk):
         assert not FileObject.objects.exists()
 
@@ -31,7 +31,7 @@ def test_files_are_scoped_to_the_current_school(school_a: Model, school_b: Model
 @pytest.mark.req("P1-T01", "DR-005")
 def test_a_school_has_its_profile_and_a_logo(school_a: Model) -> None:
     with tenant_context(school_a.pk):
-        logo = FileObjectFactory()
+        logo = FileObjectFactory.create()
     # The School model is looked up from the fixture: modules.files may not import
     # accounts.models (BUILD_PLAN §8.2).
     school_model = type(school_a)

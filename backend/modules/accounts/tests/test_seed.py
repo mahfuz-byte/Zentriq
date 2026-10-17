@@ -74,7 +74,7 @@ def test_the_seed_reuses_a_user_whose_name_differs_only_in_case(
     monkeypatch.setenv("SEED_PASSWORD", SEED_PASSWORD)
     school = School.objects.create(slug="greenfield", name="Greenfield School")
     with tenant_context(school.id):
-        UserFactory(username="Admin", display_name="Head")
+        UserFactory.create(username="Admin", display_name="Head")
 
     call_command("seed")
 
