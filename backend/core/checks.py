@@ -18,6 +18,12 @@ def tenant_model_errors(model_classes: Iterable[type[models.Model]]) -> list[che
     A many-to-many between school-owned models needs a `through` model that is
     itself a TenantModel: Django's auto-created link table has no school and skips
     the write guards, so add() could link rows across schools.
+
+    A unique constraint or index declared in Meta starts with `school` (BUILD_PLAN
+    §5.4): a unique across schools reveals whether a value exists in another school,
+    and an index that doesn't lead with school doesn't serve school-scoped queries.
+    Field-level `unique=True` is for deliberately global values (token hashes,
+    storage keys) and isn't checked.
     """
     errors: list[checks.CheckMessage] = []
     for model in model_classes:
@@ -30,6 +36,15 @@ def tenant_model_errors(model_classes: Iterable[type[models.Model]]) -> list[che
                     "or it loses the school-scoped base manager.",
                     obj=model,
                     id="core.E002",
+                )
+            )
+        for name in _declared_without_school_first(model):
+            errors.append(
+                checks.Error(
+                    f"`{name}` must start with `school`, like every unique constraint "
+                    "and index of a school-owned model.",
+                    obj=model,
+                    id="core.E003",
                 )
             )
         for field in model._meta.local_many_to_many:
@@ -45,6 +60,21 @@ def tenant_model_errors(model_classes: Iterable[type[models.Model]]) -> list[che
                     )
                 )
     return errors
+
+
+def _declared_without_school_first(model: type[models.Model]) -> list[str]:
+    declared = [
+        *(c for c in model._meta.constraints if isinstance(c, models.UniqueConstraint)),
+        *model._meta.indexes,
+    ]
+    return [d.name for d in declared if _first_column(d) not in {"school", "school_id"}]
+
+
+def _first_column(declared: models.UniqueConstraint | models.Index) -> str | None:
+    if declared.fields:
+        return declared.fields[0].removeprefix("-")
+    first = declared.expressions[0] if declared.expressions else None
+    return first.name if isinstance(first, models.F) else None
 
 
 @checks.register(checks.Tags.models)

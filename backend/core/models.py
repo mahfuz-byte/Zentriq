@@ -1,3 +1,4 @@
+import functools
 import uuid
 from collections.abc import Sequence
 from typing import Any, Self, TypeGuard
@@ -141,11 +142,16 @@ class TenantModel(BaseModel):
                 )
 
 
-def tenant_models() -> list[type[TenantModel]]:
-    """TENANT_MODELS: every installed, concrete TenantModel (DR-002). RLS (P7-T02) and
-    the cross-tenant suite are generated from it. Call once the app registry is ready.
+@functools.cache
+def tenant_models() -> tuple[type[TenantModel], ...]:
+    """The TENANT_MODELS registry: every installed, concrete TenantModel (DR-002). RLS
+    (P7-T02) and the cross-tenant suite are generated from it.
+
+    A function rather than a module constant because models aren't loaded when this
+    module is imported. Computed once, on the first call after the app registry is
+    ready (before that, apps.get_models() raises and nothing is cached).
     """
-    return [model for model in apps.get_models() if is_tenant_model(model)]
+    return tuple(model for model in apps.get_models() if is_tenant_model(model))
 
 
 def is_tenant_model(model: object) -> TypeGuard[type[TenantModel]]:

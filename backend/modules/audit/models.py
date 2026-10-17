@@ -1,6 +1,7 @@
 from django.db import models
 
 from core.models import TenantModel
+from modules.accounts.roles import Role
 
 
 class AuditEvent(TenantModel):
@@ -15,7 +16,8 @@ class AuditEvent(TenantModel):
 
     actor_type = models.CharField(max_length=20, choices=ActorType.choices)
     actor_id = models.UUIDField(null=True, blank=True)
-    actor_role = models.CharField(max_length=20, blank=True)
+    # The user's active role; empty for operators and the system.
+    actor_role = models.CharField(max_length=20, choices=Role.choices, blank=True)
     action = models.CharField(max_length=100)
     entity_type = models.CharField(max_length=100)
     entity_id = models.CharField(max_length=100)
@@ -30,4 +32,10 @@ class AuditEvent(TenantModel):
     class Meta(TenantModel.Meta):
         indexes = [
             models.Index(fields=["school", "created_at"], name="audit_event_school_created"),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(actor_role__in=[*Role.values, ""]),
+                name="audit_event_actor_role_valid",
+            ),
         ]

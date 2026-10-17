@@ -4,7 +4,9 @@ from django.contrib.auth.base_user import AbstractBaseUser
 from django.db import models
 from django.db.models.functions import Lower
 
+from core.managers import TenantManager
 from core.models import BaseModel, TenantModel
+from modules.accounts.roles import Role
 
 
 class School(BaseModel):
@@ -27,6 +29,16 @@ class School(BaseModel):
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE)
 
 
+class UserManager(TenantManager["User"]):
+    def get_by_natural_key(self, username: str | None) -> "User":
+        """The current school's user with this username, in any case: the same rule as
+        the unique constraint, which compares lower-cased usernames.
+        """
+        return self.alias(username_lower=Lower("username")).get(
+            username_lower=Lower(models.Value(username))
+        )
+
+
 class User(AbstractBaseUser, TenantModel):
     """A person in one school. `AUTH_USER_MODEL`; scoped to the current school like
     every TenantModel. Usernames are unique within a school only, so sign-in always
@@ -46,6 +58,8 @@ class User(AbstractBaseUser, TenantModel):
     mfa_secret_enc = models.TextField(null=True, blank=True)
     failed_logins = models.PositiveIntegerField(default=0)
     locked_until = models.DateTimeField(null=True, blank=True)
+
+    objects = UserManager()
 
     USERNAME_FIELD = "username"
     EMAIL_FIELD = "email"
@@ -78,10 +92,7 @@ class User(AbstractBaseUser, TenantModel):
 
 
 class RoleAssignment(TenantModel):
-    class Role(models.TextChoices):
-        SCHOOL_ADMIN = "SCHOOL_ADMIN"
-        TEACHER = "TEACHER"
-        STUDENT = "STUDENT"
+    Role = Role
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="role_assignments")
     role = models.CharField(max_length=20, choices=Role.choices)
@@ -121,7 +132,8 @@ class Session(BaseModel):
         OperatorAccount, null=True, blank=True, on_delete=models.CASCADE
     )
     token_hash = models.CharField(max_length=64, unique=True)
-    active_role = models.CharField(max_length=20)
+    # The role a user session acts as; empty for an operator session.
+    active_role = models.CharField(max_length=20, choices=Role.choices, blank=True)
     mfa_verified_at = models.DateTimeField(null=True, blank=True)
     reauth_at = models.DateTimeField(null=True, blank=True)
     idle_expires_at = models.DateTimeField()
@@ -137,22 +149,36 @@ class Session(BaseModel):
                 ),
                 name="accounts_session_user_xor_operator",
             ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(user__isnull=False, active_role__in=Role.values)
+                    | models.Q(user__isnull=True, active_role="")
+                ),
+                name="accounts_session_active_role_valid",
+            ),
         ]
 
 
-class Invitation(TenantModel):
-    """A single-use invitation to set a password. Stores only the token's SHA-256."""
+class SingleUseToken(TenantModel):
+    """A token a user redeems once, before it expires. Stores only the token's SHA-256,
+    unique across schools so a token resolves to exactly one row.
+    """
+
+    token_hash = models.CharField(max_length=64, unique=True)
+    expires_at = models.DateTimeField()
+    used_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta(TenantModel.Meta):
+        abstract = True
+
+
+class Invitation(SingleUseToken):
+    """An invitation to set a first password."""
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="invitations")
-    token_hash = models.CharField(max_length=64, unique=True)
-    expires_at = models.DateTimeField()
-    used_at = models.DateTimeField(null=True, blank=True)
 
 
-class PasswordResetToken(TenantModel):
-    """A single-use password reset. Stores only the token's SHA-256."""
+class PasswordResetToken(SingleUseToken):
+    """A password reset."""
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="password_resets")
-    token_hash = models.CharField(max_length=64, unique=True)
-    expires_at = models.DateTimeField()
-    used_at = models.DateTimeField(null=True, blank=True)

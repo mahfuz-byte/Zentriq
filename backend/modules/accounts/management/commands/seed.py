@@ -26,19 +26,33 @@ class Command(BaseCommand):
         if not password:
             raise CommandError("SEED_PASSWORD must be set: the seed never uses a default password")
 
+        kept: list[str] = []
         with transaction.atomic():
             school, _ = School.objects.get_or_create(
                 slug=SCHOOL_SLUG, defaults={"name": SCHOOL_NAME}
             )
             with tenant_context(school.id):
                 for username, display_name, role in USERS:
-                    user, created = User.objects.get_or_create(
-                        username=username,
-                        defaults={"display_name": display_name, "status": User.Status.ACTIVE},
-                    )
-                    if created:
+                    try:
+                        # Usernames are unique ignoring case, so look them up that way.
+                        user = User.objects.get_by_natural_key(username)
+                    except User.DoesNotExist:
+                        user = User(
+                            username=username,
+                            display_name=display_name,
+                            status=User.Status.ACTIVE,
+                        )
                         user.set_password(password)
                         user.save()
+                    else:
+                        if not user.check_password(password):
+                            kept.append(username)
                     RoleAssignment.objects.get_or_create(user=user, role=role)
 
         self.stdout.write(f"Seeded {SCHOOL_SLUG} with {len(USERS)} users.")
+        if kept:
+            # The seed never overwrites a password: say so, so a changed SEED_PASSWORD
+            # doesn't look like it took effect.
+            self.stdout.write(
+                f"{', '.join(sorted(kept))} keep their existing passwords, not SEED_PASSWORD."
+            )
