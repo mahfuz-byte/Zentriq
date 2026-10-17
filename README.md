@@ -20,12 +20,25 @@ uv run pytest modules/accounts            # one app's tests
 BUILD_PLAN §8.2 and §8.4:
 
 - Ruff formats and lints. Code reads the time only through `core.clock`, and raw
-  cursors are allowed only in reviewed files.
+  connections, cursors and `RawSQL` are allowed only in reviewed files.
 - mypy runs in strict mode. Every `Any` and `type: ignore` needs a `# reason:` comment.
 - import-linter keeps `domain` pure and stops `core` importing `modules`.
 - `python -m core.lint` checks the rest: `all_schools` only inside `system_scope`, no
-  `.raw()`/`.extra()`, and no imports of another module's models, views, serializers or
-  tasks.
+  `.raw()`/`.extra()`, and no imports (absolute or relative) of another module's models,
+  views, serializers or tasks.
+
+These checks catch mistakes, not deliberate evasion such as `importlib` or aliasing
+through variables; code review covers that.
+
+Differences from the build plan, until the missing pieces exist:
+
+- §8.3 names `pnpm verify` at the repo root. There's no front end or pnpm workspace yet,
+  so the back-end gate runs from `backend/`. It has no OpenAPI drift step until DRF and
+  the schema arrive.
+- §8.2 has Ruff ban `.raw()`/`.extra()`. Ruff can only ban names, not methods, so
+  `core.lint` (AS002) does it. The same goes for cross-module imports (AS003): one
+  rule covers every app, where import-linter would need a contract per pair of apps.
+- CI differences from §10.3 are listed at the top of `.github/workflows/ci.yml`.
 
 Windows: if `uv` isn't on PATH, run it as `python -m uv`.
 

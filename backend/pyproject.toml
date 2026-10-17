@@ -46,9 +46,17 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "TID"]
 "datetime.datetime.today".msg = "Use core.clock.now()"
 "datetime.date.today".msg = "Use core.clock.today()"
 "time.time".msg = "Use core.clock.now()"
-# §8.2: raw SQL bypasses tenant scoping; reviewed files are allow-listed below.
-"django.db.connection.cursor".msg = "Raw SQL bypasses tenant scoping; use the ORM"
+"time.time_ns".msg = "Use core.clock.now()"
+"django.utils.timezone.localtime".msg = "Use core.clock.now().astimezone(...)"
+"django.utils.timezone.localdate".msg = "Use core.clock.today()"
+# §8.2: raw SQL bypasses tenant scoping; reviewed files are allow-listed below. The
+# whole connection objects are banned, since any attribute path leads to a cursor.
+# `.raw()` and `.extra()` are methods, which Ruff can't ban: core.lint AS002 does.
+"django.db.connection".msg = "Raw SQL bypasses tenant scoping; use the ORM"
 "django.db.connections".msg = "Raw SQL bypasses tenant scoping; use the ORM"
+"django.db.transaction.get_connection".msg = "Raw SQL bypasses tenant scoping; use the ORM"
+"django.db.models.RawSQL".msg = "Raw SQL bypasses tenant scoping; use the ORM"
+"django.db.models.expressions.RawSQL".msg = "Raw SQL bypasses tenant scoping; use the ORM"
 
 [tool.ruff.lint.per-file-ignores]
 # Django declares Meta options and REQUIRED_FIELDS as class-level lists by design.
@@ -71,7 +79,8 @@ type = "forbidden"
 source_modules = ["domain"]
 forbidden_modules = [
     "django", "rest_framework", "celery", "psycopg", "boto3", "httpx", "anthropic",
-    "core", "modules", "config", "socket", "subprocess",
+    "requests", "redis", "core", "modules", "config", "ai",
+    "socket", "subprocess", "http", "smtplib", "ftplib", "sqlite3",
     "urllib",  # import-linter can only forbid whole external packages; this covers urllib.request
 ]
 

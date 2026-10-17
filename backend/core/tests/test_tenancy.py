@@ -132,8 +132,11 @@ def test_a_new_row_takes_its_school_from_the_context(school_a: Model) -> None:
 @pytest.mark.django_db
 @pytest.mark.req("NFR-SEC-002")
 def test_a_school_supplied_as_input_is_never_honoured(school_a: Model, school_b: Model) -> None:
-    with tenant_context(school_a.pk), pytest.raises(CrossTenantWriteError):
-        Course.objects.create(school_id=school_b.pk, title="Smuggled")
+    with tenant_context(school_a.pk):
+        with pytest.raises(CrossTenantWriteError):
+            Course.objects.create(school=school_b, title="Smuggled")  # type: ignore[misc]  # reason: fixture typed Model
+        with pytest.raises(CrossTenantWriteError):
+            Course.objects.create(school_id=school_b.pk, title="Smuggled")
 
     with system_scope("test: nothing was written"):
         assert not Course.all_schools.exists()
@@ -145,7 +148,7 @@ def test_an_existing_row_cannot_move_to_another_school(school_a: Model, school_b
     with tenant_context(school_a.pk):
         course = Course.objects.create(title="Algebra")
 
-    course.school_id = school_b.pk
+    course.school = school_b  # type: ignore[assignment]  # reason: fixture typed Model
     with tenant_context(school_b.pk), pytest.raises(CrossTenantWriteError):
         course.save()
 
@@ -215,6 +218,8 @@ def test_bulk_update_cannot_repoint_rows_at_another_schools_row(
 def test_bulk_create_takes_the_school_from_the_context(school_a: Model, school_b: Model) -> None:
     with tenant_context(school_a.pk):
         Course.objects.bulk_create([Course(title="Algebra"), Course(title="Geometry")])
+        with pytest.raises(CrossTenantWriteError):
+            Course.objects.bulk_create([Course(school=school_b, title="Smuggled")])  # type: ignore[misc]  # reason: fixture typed Model
         with pytest.raises(CrossTenantWriteError):
             Course.objects.bulk_create([Course(school_id=school_b.pk, title="Smuggled")])
 

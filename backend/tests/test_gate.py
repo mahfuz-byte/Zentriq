@@ -9,11 +9,10 @@ import subprocess
 import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
-from pathlib import Path
 
 import pytest
 
-BACKEND = Path(__file__).resolve().parent.parent
+from scripts.verify import BACKEND, LINT_IMPORTS
 
 
 def run(*args: str, stdin: str | None = None) -> subprocess.CompletedProcess[str]:
@@ -40,6 +39,9 @@ def ruff_check(filename: str, source: str) -> subprocess.CompletedProcess[str]:
         "from datetime import datetime\n\ndatetime.now()\n",
         "import datetime\n\ndatetime.date.today()\n",
         "import time\n\ntime.time()\n",
+        "import time\n\ntime.time_ns()\n",
+        "from django.utils import timezone\n\ntimezone.localtime()\n",
+        "from django.utils import timezone\n\ntimezone.localdate()\n",
     ],
 )
 def test_reading_the_clock_directly_fails_lint(source: str) -> None:
@@ -53,8 +55,17 @@ RAW_CURSOR = "from django.db import connection\n\nconnection.cursor()\n"
 
 
 @pytest.mark.req("C-01")
-def test_a_raw_cursor_fails_lint_outside_reviewed_files() -> None:
-    result = ruff_check("modules/accounts/selectors.py", RAW_CURSOR)
+@pytest.mark.parametrize(
+    "source",
+    [
+        RAW_CURSOR,
+        "from django.db import connection\n\nconnection.connection.cursor()\n",
+        "from django.db import transaction\n\ntransaction.get_connection().cursor()\n",
+        "from django.db.models.expressions import RawSQL\n\nRawSQL('SELECT 1', [])\n",
+    ],
+)
+def test_a_raw_cursor_fails_lint_outside_reviewed_files(source: str) -> None:
+    result = ruff_check("modules/accounts/selectors.py", source)
 
     assert result.returncode != 0
     assert "TID251" in result.stdout
@@ -87,11 +98,7 @@ def planted(relative_path: str, source: str) -> Iterator[None]:
 
 
 def lint_imports() -> subprocess.CompletedProcess[str]:
-    # import-linter has no `python -m` entry point; its script sits next to the interpreter.
-    script = Path(sys.executable).with_name("lint-imports")
-    return subprocess.run(
-        [str(script), "--no-cache"], cwd=BACKEND, capture_output=True, text=True, check=False
-    )
+    return subprocess.run(LINT_IMPORTS, cwd=BACKEND, capture_output=True, text=True, check=False)
 
 
 @pytest.mark.req("P0-T05")
@@ -101,6 +108,8 @@ def lint_imports() -> subprocess.CompletedProcess[str]:
         ("domain/gate_probe.py", "import django\n"),
         ("domain/gate_probe.py", "import core.context\n"),
         ("domain/gate_probe.py", "import subprocess\n"),
+        ("domain/gate_probe.py", "import http.client\n"),
+        ("domain/gate_probe.py", "import smtplib\n"),
         ("core/gate_probe.py", "import modules.accounts.models\n"),
     ],
 )
@@ -144,8 +153,23 @@ def code_rules() -> subprocess.CompletedProcess[str]:
         ),
         ("modules/files/gate_probe.py", "from modules.accounts.models import User\n", "AS003"),
         ("modules/files/gate_probe.py", "from modules.accounts import views\n", "AS003"),
+        ("modules/files/gate_probe.py", "from ..accounts.models import User\n", "AS003"),
+        ("modules/files/gate_probe.py", "from ..accounts import models\n", "AS003"),
+        (
+            "modules/accounts/gate_probe.py",
+            "from modules.accounts.models import User\n\ngetattr(User, 'all_schools')\n",
+            "AS001",
+        ),
+        (
+            "modules/accounts/gate_probe.py",
+            "from modules.accounts.models import User\n\n"
+            "with open('x') as f, f.system_scope('x'):\n    User.all_schools.count()\n",
+            "AS001",
+        ),
         ("core/gate_probe.py", "from typing import Any\n\nx: Any = 1\n", "AS004"),
         ("core/gate_probe.py", "x: int = '1'  # type: ignore[assignment]\n", "AS004"),
+        ("core/gate_probe.py", "import typing\n\nx: typing.Any = 1\n", "AS004"),
+        ("core/gate_probe.py", "from typing import Any as A\n\nx: A = 1\n", "AS004"),
     ],
 )
 def test_a_forbidden_call_site_fails_the_code_rules(
@@ -169,6 +193,7 @@ def test_all_schools_inside_a_system_scope_and_justified_escape_hatches_pass() -
         "with system_scope('retention'):\n"
         "    User.all_schools.count()\n"
         "x: Any = 1  # reason: a probe\n"
+        "from .models import User as Same\n"
     )
     with planted("modules/accounts/gate_probe.py", source):
         result = code_rules()
