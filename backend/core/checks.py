@@ -5,7 +5,7 @@ from django.apps import apps
 from django.core import checks
 from django.db import models
 
-from core.models import TenantModel
+from core.models import is_tenant_model
 
 
 def tenant_model_errors(model_classes: Iterable[type[models.Model]]) -> list[checks.CheckMessage]:
@@ -17,15 +17,11 @@ def tenant_model_errors(model_classes: Iterable[type[models.Model]]) -> list[che
     """
     errors: list[checks.CheckMessage] = []
     for model in model_classes:
-        if not issubclass(model, TenantModel):
+        if not is_tenant_model(model):
             continue
         for field in model._meta.local_many_to_many:
-            target = field.related_model
-            through = field.remote_field.through
-            if (
-                isinstance(target, type)
-                and issubclass(target, TenantModel)
-                and not (isinstance(through, type) and issubclass(through, TenantModel))
+            if is_tenant_model(field.related_model) and not is_tenant_model(
+                field.remote_field.through
             ):
                 errors.append(
                     checks.Error(

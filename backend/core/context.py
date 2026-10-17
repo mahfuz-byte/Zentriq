@@ -21,6 +21,10 @@ class RequestContext:
     # Set only inside `system_scope`: why this code may read across schools.
     system_scope_reason: str | None = None
 
+    @property
+    def in_system_scope(self) -> bool:
+        return self.system_scope_reason is not None
+
 
 _current: ContextVar[RequestContext] = ContextVar("as_request_context", default=RequestContext())
 

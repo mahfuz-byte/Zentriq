@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 from django.db import models
 
 from core.context import ctx, require_school_id
-from core.errors import SystemScopeRequiredError
+from core.errors import CrossTenantWriteError, SystemScopeRequiredError
 
 if TYPE_CHECKING:
     from core.models import TenantModel
@@ -21,12 +21,28 @@ class TenantQuerySet(models.QuerySet[_Row]):
     def bulk_create(
         self,
         objs: Iterable[_Row],
-        *args: Any,  # reason: passed through to Django's bulk_create unchanged
-        **kwargs: Any,  # reason: as for *args
+        batch_size: int | None = None,
+        ignore_conflicts: bool = False,
+        update_conflicts: bool = False,
+        update_fields: Sequence[str] | None = None,
+        unique_fields: Sequence[str] | None = None,
     ) -> list[_Row]:
+        if update_conflicts:
+            # An upsert overwrites whatever row holds the key, in any school.
+            raise CrossTenantWriteError(
+                f"{self.model.__name__}.bulk_create cannot update on conflict"
+            )
         rows = list(objs)
-        self.model.guard_writes(rows)
-        created = super().bulk_create(rows, *args, **kwargs)
+        # With ignore_conflicts a row may be skipped because its key is taken, maybe by
+        # another school's row, so links to rows in the batch can't be trusted.
+        self.model.guard_writes(rows, trust_batch_links=not ignore_conflicts)
+        created = super().bulk_create(
+            rows,
+            batch_size=batch_size,
+            ignore_conflicts=ignore_conflicts,
+            update_fields=update_fields,
+            unique_fields=unique_fields,
+        )
         for row in rows:
             row._mark_persisted()
         return created
@@ -64,12 +80,14 @@ class TenantManager(models.Manager[_Row]):
 
 class TenantBaseManager(TenantManager[_Row]):
     """Django's base manager for TenantModel: forward links, save()'s UPDATE, delete
-    cascades and refresh_from_db. Scoped like `objects`, except inside `system_scope`,
-    where system jobs need those to reach every school's rows.
+    cascades, related add() and refresh_from_db. Scoped like `objects`, except in a
+    `system_scope` with no school, where system jobs need those to reach every
+    school's rows. A system scope inside a school stays within that school.
     """
 
     def get_queryset(self) -> TenantQuerySet[_Row]:
-        if ctx().system_scope_reason is not None:
+        context = ctx()
+        if context.in_system_scope and context.school_id is None:
             return TenantQuerySet(self.model, using=self._db)
         return super().get_queryset()
 
@@ -77,12 +95,12 @@ class TenantBaseManager(TenantManager[_Row]):
 class AllSchoolsManager(models.Manager[_Row]):
     """Unscoped manager for system jobs. Usable only inside `system_scope`.
 
-    Its bulk_create/bulk_update skip the tenancy write rules (save() still applies
-    them): system jobs own that risk.
+    Its update(), delete(), bulk_create() and bulk_update() skip the tenancy write
+    rules (save() still applies them): system jobs own that risk.
     """
 
     def get_queryset(self) -> models.QuerySet[_Row]:
-        if ctx().system_scope_reason is None:
+        if not ctx().in_system_scope:
             raise SystemScopeRequiredError(
                 f"{self.model.__name__}.all_schools used outside system_scope"
             )
