@@ -1,7 +1,9 @@
+import functools
 import uuid
 from collections.abc import Sequence
 from typing import Any, Self, TypeGuard
 
+from django.apps import apps
 from django.db import models
 
 from core.context import require_school_id
@@ -138,6 +140,18 @@ class TenantModel(BaseModel):
                 raise CrossTenantWriteError(
                     f"{cls.__name__}.{field.name} points at a row outside the current school"
                 )
+
+
+@functools.cache
+def tenant_models() -> tuple[type[TenantModel], ...]:
+    """The TENANT_MODELS registry: every installed, concrete TenantModel (DR-002). RLS
+    (P7-T02) and the cross-tenant suite are generated from it.
+
+    A function rather than a module constant because models aren't loaded when this
+    module is imported. Computed once, on the first call after the app registry is
+    ready (before that, apps.get_models() raises and nothing is cached).
+    """
+    return tuple(model for model in apps.get_models() if is_tenant_model(model))
 
 
 def is_tenant_model(model: object) -> TypeGuard[type[TenantModel]]:

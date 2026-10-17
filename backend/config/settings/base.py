@@ -16,6 +16,8 @@ INSTALLED_APPS = [
     "django.contrib.auth",
     "core",
     "modules.accounts",
+    "modules.audit",
+    "modules.files",
 ]
 
 MIDDLEWARE: list[str] = []
@@ -33,3 +35,18 @@ DATABASES["default"]["OPTIONS"] = {"pool": True}
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 USE_TZ = True
 TIME_ZONE = "UTC"
+
+# The custom user model. It has to be set before the first migration of any real
+# database; Django can't switch it afterwards.
+AUTH_USER_MODEL = "accounts.User"
+# Usernames are unique per school only, so Django's ModelBackend can't sign anyone in.
+# P1-T03 adds a school-aware backend; until then nothing authenticates.
+AUTHENTICATION_BACKENDS: list[str] = []
+SILENCED_SYSTEM_CHECKS = [
+    "auth.W004",  # reason: USERNAME_FIELD is unique per school, by design (see above)
+]
+
+PASSWORD_HASHERS = [
+    "django.contrib.auth.hashers.Argon2PasswordHasher",
+    "django.contrib.auth.hashers.PBKDF2PasswordHasher",
+]
